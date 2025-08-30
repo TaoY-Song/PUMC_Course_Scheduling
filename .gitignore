@@ -1,0 +1,57 @@
+# Python virtual environment
+PUMC_venv/
+venv/
+env/
+
+# Python compiled files
+*.pyc
+*.pyo
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyInstaller build files
+dist/
+build/
+*.spec
+
+# Installer output
+installer_output/
+*.exe
+*.msi
+
+# Log files
+*.log
+app.log
+课程补充测试.log
+
+# Excel files (data)
+*.xlsx
+*.xls
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+Thumbs.db
+.DS_Store
+ehthumbs.db
+
+# Augment specific
+.cursorindexingignore
+.augmentignore
+.specstory/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Test files
+.pytest_cache/
+.coverage
+htmlcov/
