@@ -102,7 +102,7 @@ def main():
 
         # 设置应用程序信息
         app.setApplicationName("PUMC交互式排课系统")
-        app.setApplicationVersion("1.0")
+        app.setApplicationVersion("1.0.1")
         app.setOrganizationName("PUMC")
 
         # 创建主窗口

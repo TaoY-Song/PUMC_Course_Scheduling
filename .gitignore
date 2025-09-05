@@ -13,7 +13,6 @@ __pycache__/
 # PyInstaller build files
 dist/
 build/
-*.spec
 
 # Installer output
 installer_output/

@@ -1,7 +1,7 @@
 ; PUMC智能排课系统安装脚本 - 包含免责声明功能
 
 #define MyAppName "PUMC智能排课系统"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.1"
 #define MyAppPublisher "中国医学科学院 北京协和医学院 阜外医院"
 #define MyAppURL "https://www.pumc.edu.cn/"
 #define MyAppExeName "PUMC_Course_Scheduling.exe"
@@ -31,7 +31,7 @@ InfoAfterFile=readme_after.txt
 ; 输出设置
 OutputDir=installer_output
 OutputBaseFilename=PUMC_Course_Scheduling_Setup_v{#MyAppVersion}
-SetupIconFile=PUMC校徽.ico
+SetupIconFile=PUMClogo.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -65,6 +65,8 @@ Name: "startmenuicon"; Description: "Create Start Menu icon"; GroupDescription: 
 [Files]
 ; 主程序文件 - 包含PyInstaller生成的所有文件
 Source: "dist\PUMC_Course_Scheduling\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; 图标文件
+Source: "PUMClogo.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; 文档文件
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion; DestName: "使用说明.txt"
 Source: "disclaimer.txt"; DestDir: "{app}"; Flags: ignoreversion
@@ -74,18 +76,18 @@ Source: "*.xls"; DestDir: "{app}\examples"; Flags: ignoreversion external skipif
 
 [Icons]
 ; 程序组图标
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\PUMClogo.ico"
 Name: "{group}\使用说明"; Filename: "{app}\使用说明.txt"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 
 ; 桌面图标
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon; IconFilename: "{app}\PUMClogo.ico"
 
 ; 快速启动图标
-Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: quicklaunchicon
+Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: quicklaunchicon; IconFilename: "{app}\PUMClogo.ico"
 
 ; 开始菜单图标
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: startmenuicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: startmenuicon; IconFilename: "{app}\PUMClogo.ico"
 
 [Run]
 ; 安装完成后运行程序
