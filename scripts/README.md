@@ -24,8 +24,7 @@
 
 #### 使用方法
 ```bash
-# 在项目根目录下运行
-cd C:\Users\95678\Desktop\PUMC_Course_Scheduling
+cd /path/to/PUMC_Course_Scheduling
 python scripts/course_supplement_test.py
 ```
 

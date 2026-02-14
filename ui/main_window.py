@@ -109,7 +109,7 @@ class CategoryComboDelegate(QStyledItemDelegate):
 class CourseLoadThread(QThread):
     """课程加载线程"""
 
-    finished = pyqtSignal(bool, str)  # 成功/失败, 消息
+    finished = pyqtSignal(bool, str, list)  # 成功/失败, 消息, 警告列表
     progress = pyqtSignal(str)  # 进度消息
 
     def __init__(self, file_path: str):
@@ -124,12 +124,13 @@ class CourseLoadThread(QThread):
 
             if success:
                 courses = self.loader.get_courses()
+                warnings = self.loader.column_warnings
                 message = f"成功加载 {len(courses)} 门课程"
-                self.finished.emit(True, message)
+                self.finished.emit(True, message, warnings)
             else:
-                self.finished.emit(False, "加载失败")
+                self.finished.emit(False, "加载失败", [])
         except Exception as e:
-            self.finished.emit(False, f"加载出错: {str(e)}")
+            self.finished.emit(False, f"加载出错: {str(e)}", [])
 
 
 class AlgorithmConfigWidget(QWidget):
@@ -708,15 +709,21 @@ class MainWindow(QMainWindow):
         """加载进度更新"""
         self.load_status_label.setText(message)
 
-    def on_load_finished(self, success, message):
+    def on_load_finished(self, success, message, warnings=None):
         """加载完成处理"""
+        if warnings is None:
+            warnings = []
         self.load_status_label.setText(message)
 
         if success:
             self.course_loader = self.load_thread.loader
             self.build_course_index()
             self.search_course_button.setEnabled(True)
-            QMessageBox.information(self, "成功", message)
+            if warnings:
+                detail = "\n".join(warnings)
+                QMessageBox.information(self, "成功", f"{message}\n\n⚠️ 警告:\n{detail}")
+            else:
+                QMessageBox.information(self, "成功", message)
         else:
             QMessageBox.critical(self, "错误", message)
 

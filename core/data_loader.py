@@ -16,6 +16,7 @@ class CourseDataLoader:
     def __init__(self):
         self.courses: List[Course] = []
         self.load_report: Dict[str, Any] = {}
+        self.column_warnings: List[str] = []
 
     def load_from_excel(self, file_path: str) -> bool:
         """从Excel文件加载课程数据"""
@@ -80,11 +81,10 @@ class CourseDataLoader:
 
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
-            print(f"❌ Excel文件缺少必要列: {missing_columns}")
-            print("请确保Excel文件包含以下列:")
-            for col in required_columns:
-                print(f"  - {col}")
-            return False
+            self.column_warnings = [f"缺少列 '{col}'，已使用默认值" for col in missing_columns]
+            for warn in self.column_warnings:
+                print(f"⚠️ {warn}")
+            print("  将使用默认值继续处理...")
 
         print("✓ Excel文件列验证通过")
         return True
@@ -92,6 +92,24 @@ class CourseDataLoader:
     def _clean_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """清洗数据"""
         df = df.copy()
+
+        # 为缺失的列添加默认值
+        defaults = {
+            "课程编码": "UNKNOWN",
+            "课程名称": "未知课程",
+            "开课院系": "未知院系",
+            "课程类别": "选修课",
+            "班次": 1,
+            "校区": "校本部",
+            "任课教师": "待定",
+            "学分": 0.0,
+            "学时": 0.0,
+        }
+        
+        for col, default_value in defaults.items():
+            if col not in df.columns:
+                df[col] = default_value
+                print(f"  ⚠️ 列 '{col}' 使用默认值: {default_value}")
 
         # 去除字符串列的前后空格
         string_columns = [
@@ -166,6 +184,7 @@ class CourseDataLoader:
             "categories": list(set(course.category for course in self.courses)),
             "departments": list(set(course.department for course in self.courses)),
             "campuses": list(set(course.campus for course in self.courses)),
+            "column_warnings": self.column_warnings,
         }
 
     def get_courses(self) -> List[Course]:

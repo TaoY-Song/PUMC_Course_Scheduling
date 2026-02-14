@@ -54,8 +54,10 @@ class SchedulingService(ISchedulingService):
     def execute(self, courses: List[SelectedCourse]) -> ScheduleResult:
         """执行排课算法"""
         with self._lock:
-            if self._status != SchedulingStatus.IDLE:
+            if self._status == SchedulingStatus.RUNNING:
                 raise RuntimeError(f"服务当前状态为 {self._status.value}，无法执行排课")
+            
+            self._status = SchedulingStatus.IDLE
 
             if not self._engine:
                 raise RuntimeError("排课引擎未初始化")

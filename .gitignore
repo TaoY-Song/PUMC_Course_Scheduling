@@ -21,8 +21,6 @@ installer_output/
 
 # Log files
 *.log
-app.log
-课程补充测试.log
 
 # Excel files (data)
 *.xlsx
@@ -54,3 +52,4 @@ ehthumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+web/node_modules

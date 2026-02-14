@@ -284,10 +284,15 @@ class SelectedCourseExporter:
                     column=col_base + 1,
                     value=f"{time_slot.start_section}-{time_slot.end_section}",
                 )  # 节次
+                weeks_val = (
+                    f"{min(time_slot.weeks)}-{max(time_slot.weeks)}"
+                    if time_slot.weeks
+                    else ""
+                )
                 ws.cell(
                     row=row_idx,
                     column=col_base + 2,
-                    value=f"{min(time_slot.weeks)}-{max(time_slot.weeks)}",
+                    value=weeks_val,
                 )  # 周次
 
             # 如果时间段不足5个，其余列留空（Excel会自动处理为空值）

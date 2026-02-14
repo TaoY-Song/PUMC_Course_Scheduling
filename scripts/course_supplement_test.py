@@ -25,16 +25,11 @@ class CourseSupplementTester:
     """课程补充测试器"""
 
     def __init__(self):
-        # 文件路径配置
-        self.course_list_file = (
-            r"C:\Users\95678\Desktop\PUMC_Course_Scheduling\生医工备选课表.xlsx"
-        )
-        self.schedule_result_file = (
-            r"C:\Users\95678\Desktop\PUMC_Course_Scheduling\排课结果.xlsx"
-        )
-        self.output_file = (
-            r"C:\Users\95678\Desktop\PUMC_Course_Scheduling\补充后排课结果.xlsx"
-        )
+        PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
+        self.course_list_file = os.path.join(PROJECT_ROOT, "课程一览表.xlsx")
+        self.schedule_result_file = os.path.join(PROJECT_ROOT, "排课结果.xlsx")
+        self.output_file = os.path.join(PROJECT_ROOT, "补充后排课结果.xlsx")
 
         # 初始化组件
         self.data_loader = CourseDataLoader()
