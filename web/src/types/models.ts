@@ -1,15 +1,12 @@
-/**
- * 数据模型类型定义
- * 对应后端DTO的前端类型
- */
-
-// ==================== 枚举类型 ====================
-
 export type CreditConstraintMode = 'REQUIRED' | 'OPTIMAL';
 export type CampusConflictMode = 'DAILY' | 'PERIOD' | 'DISABLED';
-export type SchedulingStatus = 'idle' | 'configuring' | 'running' | 'completed' | 'failed' | 'cancelled';
-
-// ==================== 基础模型 ====================
+export type SchedulingStatus =
+  | 'idle'
+  | 'configuring'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
 
 export interface TimeSlot {
   day_of_week: number;
@@ -38,10 +35,9 @@ export interface SelectedCourse {
   class_index: number;
   custom_category?: string;
   is_category_locked: boolean;
+  is_online: boolean;
   time_slots: TimeSlot[];
 }
-
-// ==================== 配置模型 ====================
 
 export interface SchedulingConfig {
   credit_constraint_mode: CreditConstraintMode;
@@ -51,8 +47,6 @@ export interface SchedulingConfig {
   credit_overflow_ratio: number;
   campus_transition_time: number;
 }
-
-// ==================== 学分模型 ====================
 
 export interface CreditRequirement {
   category: string;
@@ -66,8 +60,6 @@ export interface CreditRequirement {
 export interface CreditSettings {
   requirements: Record<string, number>;
 }
-
-// ==================== 排课结果模型 ====================
 
 export interface ScheduleScore {
   total_score: number;
@@ -91,8 +83,6 @@ export interface ScheduleResult {
   timestamp: string;
 }
 
-// ==================== UI状态模型 ====================
-
 export interface SchedulingProgress {
   status: SchedulingStatus;
   message: string;
@@ -100,19 +90,12 @@ export interface SchedulingProgress {
 }
 
 export interface AppState {
-  // 课程数据
   courses: Course[];
   selectedCourses: SelectedCourse[];
-  
-  // 排课状态
   config: SchedulingConfig;
   progress: SchedulingProgress;
   lastResult: ScheduleResult | null;
-  
-  // 学分
   creditRequirements: CreditRequirement[];
-  
-  // UI状态
   isLoading: boolean;
   error: string | null;
 }

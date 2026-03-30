@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { PERIODS, WEEKDAY_LABELS, WEEKS, weekSelectionLabel } from '../../lib/time';
 import type { TimeSlot } from '../../types/models';
 
 interface TimeSlotEditorProps {
@@ -7,173 +8,172 @@ interface TimeSlotEditorProps {
   onCancel: () => void;
 }
 
-const days = [
-  { value: 1, label: '周一' },
-  { value: 2, label: '周二' },
-  { value: 3, label: '周三' },
-  { value: 4, label: '周四' },
-  { value: 5, label: '周五' },
-  { value: 6, label: '周六' },
-  { value: 7, label: '周日' },
-];
+export function TimeSlotEditor({ initialValue, onSave, onCancel }: TimeSlotEditorProps) {
+  const [dayOfWeek, setDayOfWeek] = useState(initialValue?.day_of_week ?? 1);
+  const [startPeriod, setStartPeriod] = useState(initialValue?.start_period ?? 1);
+  const [endPeriod, setEndPeriod] = useState(initialValue?.end_period ?? 2);
+  const [selectedWeeks, setSelectedWeeks] = useState<number[]>(initialValue?.weeks ?? []);
+  const [error, setError] = useState<string | null>(null);
 
-const periods = Array.from({ length: 12 }, (_, i) => i + 1);
-const weeks = Array.from({ length: 18 }, (_, i) => i + 1);
-
-export const TimeSlotEditor: React.FC<TimeSlotEditorProps> = ({
-  initialValue,
-  onSave,
-  onCancel,
-}) => {
-  const [dayOfWeek, setDayOfWeek] = useState(initialValue?.day_of_week || 1);
-  const [startPeriod, setStartPeriod] = useState(initialValue?.start_period || 1);
-  const [endPeriod, setEndPeriod] = useState(initialValue?.end_period || 2);
-  const [selectedWeeks, setSelectedWeeks] = useState<number[]>(initialValue?.weeks || []);
+  const sortedWeeks = useMemo(
+    () => [...selectedWeeks].sort((left, right) => left - right),
+    [selectedWeeks],
+  );
 
   const toggleWeek = (week: number) => {
-    setSelectedWeeks((prev) =>
-      prev.includes(week) ? prev.filter((w) => w !== week) : [...prev, week]
+    setSelectedWeeks((current) =>
+      current.includes(week)
+        ? current.filter((item) => item !== week)
+        : [...current, week],
     );
   };
 
-  const selectAllWeeks = () => {
-    setSelectedWeeks(weeks);
-  };
-
-  const clearAllWeeks = () => {
-    setSelectedWeeks([]);
-  };
-
   const handleSave = () => {
-    if (selectedWeeks.length === 0) {
-      alert('请至少选择一周');
+    if (endPeriod < startPeriod) {
+      setError('结束节次不能早于开始节次。');
       return;
     }
+
+    if (sortedWeeks.length === 0) {
+      setError('至少选择一个上课周次。');
+      return;
+    }
+
+    setError(null);
     onSave({
       day_of_week: dayOfWeek,
       start_period: startPeriod,
       end_period: endPeriod,
-      weeks: selectedWeeks.sort((a, b) => a - b),
+      weeks: sortedWeeks,
     });
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="grid grid-cols-3 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            星期
-          </label>
+    <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-3">
+        <label className="space-y-2">
+          <span className="text-xs uppercase tracking-[0.24em] text-[#85785f]">星期</span>
           <select
             value={dayOfWeek}
-            onChange={(e) => setDayOfWeek(Number(e.target.value))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            onChange={(event) => setDayOfWeek(Number(event.target.value))}
+            className="w-full rounded-2xl border border-[#d7ccb8] bg-[#fffdfa] px-3 py-2.5 text-sm text-[#17211d] outline-none transition focus:border-[#8f7441] focus:ring-2 focus:ring-[#dcc79f]"
           >
-            {days.map((day) => (
-              <option key={day.value} value={day.value}>
-                {day.label}
+            {WEEKDAY_LABELS.slice(1).map((label, index) => (
+              <option key={label} value={index + 1}>
+                {label}
               </option>
             ))}
           </select>
-        </div>
+        </label>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            开始节次
-          </label>
+        <label className="space-y-2">
+          <span className="text-xs uppercase tracking-[0.24em] text-[#85785f]">开始节次</span>
           <select
             value={startPeriod}
-            onChange={(e) => {
-              const value = Number(e.target.value);
-              setStartPeriod(value);
-              if (value > endPeriod) {
-                setEndPeriod(value);
+            onChange={(event) => {
+              const nextValue = Number(event.target.value);
+              setStartPeriod(nextValue);
+              if (endPeriod < nextValue) {
+                setEndPeriod(nextValue);
               }
             }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            className="w-full rounded-2xl border border-[#d7ccb8] bg-[#fffdfa] px-3 py-2.5 text-sm text-[#17211d] outline-none transition focus:border-[#8f7441] focus:ring-2 focus:ring-[#dcc79f]"
           >
-            {periods.map((p) => (
-              <option key={p} value={p}>
-                第{p}节
+            {PERIODS.map((period) => (
+              <option key={period} value={period}>
+                第 {period} 节
               </option>
             ))}
           </select>
-        </div>
+        </label>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            结束节次
-          </label>
+        <label className="space-y-2">
+          <span className="text-xs uppercase tracking-[0.24em] text-[#85785f]">结束节次</span>
           <select
             value={endPeriod}
-            onChange={(e) => setEndPeriod(Number(e.target.value))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            onChange={(event) => setEndPeriod(Number(event.target.value))}
+            className="w-full rounded-2xl border border-[#d7ccb8] bg-[#fffdfa] px-3 py-2.5 text-sm text-[#17211d] outline-none transition focus:border-[#8f7441] focus:ring-2 focus:ring-[#dcc79f]"
           >
-            {periods
-              .filter((p) => p >= startPeriod)
-              .map((p) => (
-                <option key={p} value={p}>
-                  第{p}节
-                </option>
-              ))}
+            {PERIODS.filter((period) => period >= startPeriod).map((period) => (
+              <option key={period} value={period}>
+                第 {period} 节
+              </option>
+            ))}
           </select>
-        </div>
+        </label>
       </div>
 
-      <div>
-        <div className="flex justify-between items-center mb-3">
-          <label className="block text-sm font-medium text-gray-700">
-            上课周次
-          </label>
-          <div className="space-x-2">
+      <div className="rounded-[1.35rem] border border-[#e7dcc8] bg-[#fffdf8] p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-[#1a2620]">上课周次</div>
+            <div className="mt-1 text-xs text-[#6d776d]">{weekSelectionLabel(sortedWeeks)}</div>
+          </div>
+          <div className="flex items-center gap-2">
             <button
-              onClick={selectAllWeeks}
-              className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200"
+              type="button"
+              onClick={() => setSelectedWeeks([...WEEKS])}
+              className="rounded-full border border-[#d6cab3] bg-white px-3 py-1.5 text-xs font-medium text-[#455147] transition hover:bg-[#f8efde]"
             >
               全选
             </button>
             <button
-              onClick={clearAllWeeks}
-              className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200"
+              type="button"
+              onClick={() => setSelectedWeeks([])}
+              className="rounded-full border border-[#d6cab3] bg-white px-3 py-1.5 text-xs font-medium text-[#455147] transition hover:bg-[#f8efde]"
             >
               清空
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-9 gap-2">
-          {weeks.map((week) => (
-            <button
-              key={week}
-              onClick={() => toggleWeek(week)}
-              className={`w-10 h-10 rounded text-sm font-medium transition-colors ${
-                selectedWeeks.includes(week)
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              {week}
-            </button>
-          ))}
+        <div className="mt-4 grid grid-cols-5 gap-2 sm:grid-cols-10">
+          {WEEKS.map((week) => {
+            const active = selectedWeeks.includes(week);
+
+            return (
+              <button
+                key={week}
+                type="button"
+                onClick={() => toggleWeek(week)}
+                className={[
+                  'h-10 rounded-xl border text-sm font-medium transition',
+                  active
+                    ? 'border-[#1d4a3b] bg-[#17382e] text-[#f7f2e8]'
+                    : 'border-[#ddd1bd] bg-white text-[#3e4942] hover:bg-[#f8efde]',
+                ].join(' ')}
+              >
+                {week}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      <div className="flex justify-end space-x-3 pt-4 border-t">
+      {error && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+          {error}
+        </div>
+      )}
+
+      <div className="flex justify-end gap-3 border-t border-[#eadfcb] pt-4">
         <button
+          type="button"
           onClick={onCancel}
-          className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+          className="rounded-full border border-[#d6cab3] bg-white px-4 py-2 text-sm font-medium text-[#435047] transition hover:bg-[#f8efde]"
         >
           取消
         </button>
         <button
+          type="button"
           onClick={handleSave}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          className="rounded-full border border-[#1f4739] bg-[#17362d] px-4 py-2 text-sm font-medium text-[#f8f4ea] transition hover:bg-[#21463a]"
         >
-          保存
+          保存时间段
         </button>
       </div>
     </div>
   );
-};
+}
 
 export default TimeSlotEditor;

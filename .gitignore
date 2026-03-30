@@ -2,7 +2,7 @@
 PUMC_venv/
 venv/
 env/
-
+.venv/
 # Python compiled files
 *.pyc
 *.pyo

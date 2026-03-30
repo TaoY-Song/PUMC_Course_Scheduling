@@ -51,12 +51,34 @@
   * {
     @apply border-border;
   }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at top left, rgba(205, 169, 89, 0.16), transparent 28%),
+      radial-gradient(circle at top right, rgba(34, 84, 68, 0.14), transparent 24%),
+      linear-gradient(180deg, #f7f1e4 0%, #f2ead8 100%);
+    font-family:
+      "Segoe UI",
+      "PingFang SC",
+      "Hiragino Sans GB",
+      "Microsoft YaHei",
+      sans-serif;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
   }
 }
 
-/* AG-Grid自定义样式 */
 .ag-theme-alpine {
   --ag-background-color: hsl(var(--background));
   --ag-foreground-color: hsl(var(--foreground));

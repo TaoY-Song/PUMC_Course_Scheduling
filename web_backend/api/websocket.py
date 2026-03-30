@@ -2,6 +2,7 @@
 WebSocket端点
 提供实时事件推送功能
 """
+import asyncio
 import json
 from typing import Set, Dict, Any
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
@@ -98,8 +99,6 @@ async def websocket_endpoint(
     event_manager: IEventManager = Depends(get_event_manager)
 ):
     """WebSocket端点"""
-    import asyncio
-    
     await manager.connect(websocket)
     
     try:

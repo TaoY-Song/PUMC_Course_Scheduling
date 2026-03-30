@@ -35,7 +35,7 @@ def check_dependencies():
     except ImportError as e:
         print(f"❌ 缺少依赖: {e}")
         print("请安装Web版本依赖:")
-        print("    pip install -r requirements_web.txt")
+        print("    pip install -r requirements.txt")
         return False
 
 
