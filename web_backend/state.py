@@ -9,6 +9,7 @@ from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
+from core.app_paths import default_artifacts_dir
 from core.credit_manager import CreditManager
 from core.models import Course, SelectedCourse, TimeSlot
 from core.scheduling.config import SchedulingConfig
@@ -18,7 +19,9 @@ from core.services.interfaces import IDataService, IEventManager, ISchedulingSer
 
 
 def _default_artifacts_dir() -> Path:
-    return Path(__file__).resolve().parent.parent / "exports"
+    # 打包后不能写程序目录：onefile 是退出即删的临时目录，
+    # 装到 Program Files 则是只读。交由 app_paths 选可写位置。
+    return default_artifacts_dir()
 
 
 @dataclass
@@ -114,7 +117,11 @@ class WebSessionContext:
         selected = SelectedCourse(
             course=course,
             class_num=class_index,
-            time_slots=list(time_slots or []),
+            time_slots=list(
+                getattr(course, "time_slots", [])
+                if time_slots is None
+                else time_slots
+            ),
             is_online=course.is_online if is_online is None else is_online,
             custom_category=custom_category or "",
         )

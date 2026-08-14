@@ -45,6 +45,11 @@ class SchedulingConfig:
         0.1  # 学分缺口权重（灵活模式下使用，设置为较小值避免过度惩罚）
     )
 
+    # 时间偏好配置
+    avoid_early_morning: bool = False  # 是否避免早课（1-2节）
+    avoid_late_evening: bool = False  # 是否避免晚课（9-10节）
+    lunch_break_protection: bool = False  # 是否保护午休时间（5-6节）
+
     # 求解器配置
     max_solve_time_seconds: int = 30  # 最大求解时间
     max_solutions: int = 100  # 最大解数量
@@ -57,21 +62,13 @@ class SchedulingConfig:
         if self.min_campus_transfer_time < 0:
             errors.append("跨校区最小间隔时间不能为负数")
 
-        # 验证每天课程数限制
-        if self.max_courses_per_day <= 0 or self.max_courses_per_day > 10:
-            errors.append("每天最大课程数应在1-10之间")
-
-        if self.max_online_courses_per_day <= 0 or self.max_online_courses_per_day > 10:
-            errors.append("每天最大线上课程数应在1-10之间")
-
         # 验证学分超出比例
         if self.max_credit_overflow_ratio < 0 or self.max_credit_overflow_ratio > 1:
             errors.append("最大学分超出比例应在0-1之间")
 
-        # 验证优化权重
-        for weight_name, weight_value in self.optimization_weights.items():
-            if weight_value < 0 or weight_value > 1:
-                errors.append(f"优化权重 {weight_name} 应在0-1之间")
+        # 验证学分缺口权重
+        if self.credit_gap_weight < 0:
+            errors.append("学分缺口权重不能为负数")
 
         # 验证求解器配置
         if self.max_solve_time_seconds <= 0:
@@ -121,16 +118,19 @@ class SchedulingConfig:
 
         return False
 
+    @staticmethod
     def get_default_config() -> "SchedulingConfig":
         """获取默认配置"""
         return SchedulingConfig()
 
+    @staticmethod
     def get_strict_config() -> "SchedulingConfig":
         """获取严格配置（更多约束）"""
         return SchedulingConfig(
             campus_conflict_mode=CampusConflictMode.DAILY, max_credit_overflow_ratio=0.1
         )
 
+    @staticmethod
     def get_flexible_config() -> "SchedulingConfig":
         """获取灵活配置（较少约束）"""
         return SchedulingConfig(
@@ -147,6 +147,9 @@ class SchedulingConfig:
             "allow_credit_overflow": self.allow_credit_overflow,
             "max_credit_overflow_ratio": self.max_credit_overflow_ratio,
             "credit_gap_weight": self.credit_gap_weight,
+            "avoid_early_morning": self.avoid_early_morning,
+            "avoid_late_evening": self.avoid_late_evening,
+            "lunch_break_protection": self.lunch_break_protection,
             "max_solve_time_seconds": self.max_solve_time_seconds,
             "max_solutions": self.max_solutions,
         }
@@ -165,6 +168,9 @@ class SchedulingConfig:
             allow_credit_overflow=data.get("allow_credit_overflow", True),
             max_credit_overflow_ratio=data.get("max_credit_overflow_ratio", 0.2),
             credit_gap_weight=data.get("credit_gap_weight", 0.1),
+            avoid_early_morning=data.get("avoid_early_morning", False),
+            avoid_late_evening=data.get("avoid_late_evening", False),
+            lunch_break_protection=data.get("lunch_break_protection", False),
             max_solve_time_seconds=data.get("max_solve_time_seconds", 30),
             max_solutions=data.get("max_solutions", 100),
         )

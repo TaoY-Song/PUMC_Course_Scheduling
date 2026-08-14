@@ -16,10 +16,7 @@ function updateConfig(
   key: keyof SchedulingConfig,
   nextValue: string | number,
 ): SchedulingConfig {
-  return {
-    ...value,
-    [key]: nextValue,
-  };
+  return { ...value, [key]: nextValue };
 }
 
 export function SchedulingConfigPanel({
@@ -31,129 +28,109 @@ export function SchedulingConfigPanel({
   onReset,
 }: SchedulingConfigPanelProps) {
   return (
-    <Surface eyebrow="配置" title="排课参数">
-      <div className="space-y-5">
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className="space-y-2">
-            <span className="text-sm font-medium text-[#24312c]">学分约束模式</span>
-            <div className="grid grid-cols-2 gap-2">
-              {(['REQUIRED', 'OPTIMAL'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => onChange(updateConfig(value, 'credit_constraint_mode', mode))}
-                  className={`rounded-[1rem] border px-3 py-3 text-left text-sm transition ${
-                    value.credit_constraint_mode === mode
-                      ? 'border-[#305243] bg-[#173327] text-white shadow-[0_14px_30px_rgba(23,51,39,0.18)]'
-                      : 'border-[#d9cdb9] bg-white text-[#435148] hover:bg-[#f7f0e4]'
-                  }`}
-                >
-                  <div className="font-medium">{mode === 'REQUIRED' ? '硬约束' : '优化模式'}</div>
-                  <div className="mt-1 text-xs opacity-80">
-                    {mode === 'REQUIRED' ? '必须满足学分目标' : '尽量满足学分目标'}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </label>
+    <Surface>
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>排课参数</h3>
+        <span className="tag tag-gray">CONFIG</span>
+      </div>
 
-          <label className="space-y-2">
-            <span className="text-sm font-medium text-[#24312c]">校区冲突模式</span>
+      <div className="space-y-4">
+        {/* Mode toggles */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          {/* Credit constraint mode */}
+          <div>
+            <p className="mb-2 text-xs font-medium uppercase tracking-[0.15em]"
+               style={{ color: 'var(--text-muted)' }}>学分约束</p>
+            <div className="grid grid-cols-2 gap-1.5 rounded-lg border p-1"
+                 style={{ borderColor: 'var(--border-card)', background: '#f8f7f4' }}>
+              {(['REQUIRED', 'OPTIMAL'] as const).map((mode) => {
+                const active = value.credit_constraint_mode === mode;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => onChange(updateConfig(value, 'credit_constraint_mode', mode))}
+                    className="rounded-md px-3 py-2 text-left text-xs font-medium transition-all"
+                    style={active
+                      ? { background: 'var(--accent-ui)', color: 'white', boxShadow: '0 1px 3px rgba(0,0,0,0.15)' }
+                      : { color: 'var(--text-secondary)' }}
+                  >
+                    <div className="font-semibold">{mode === 'REQUIRED' ? '硬约束' : '优化'}</div>
+                    <div className="mt-0.5 opacity-75">
+                      {mode === 'REQUIRED' ? '必须满足' : '尽量满足'}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Campus conflict mode */}
+          <div>
+            <p className="mb-2 text-xs font-medium uppercase tracking-[0.15em]"
+               style={{ color: 'var(--text-muted)' }}>校区冲突</p>
             <select
               value={value.campus_conflict_mode}
-              onChange={(event) => onChange(updateConfig(value, 'campus_conflict_mode', event.target.value))}
-              className="w-full rounded-[1rem] border border-[#d9cdb9] bg-white px-3 py-3 text-sm text-[#24312c] outline-none transition focus:border-[#7c8d6f] focus:ring-2 focus:ring-[#c9d6b9]"
+              onChange={(e) => onChange(updateConfig(value, 'campus_conflict_mode', e.target.value))}
+              className="input-base"
             >
-              <option value="DAILY">DAILY - 同一天禁止跨校区</option>
-              <option value="PERIOD">PERIOD - 相邻节次禁止跨校区</option>
-              <option value="DISABLED">DISABLED - 关闭校区冲突</option>
+              <option value="DAILY">DAILY — 同天禁跨校区</option>
+              <option value="PERIOD">PERIOD — 相邻节次禁跨</option>
+              <option value="DISABLED">DISABLED — 不检查</option>
             </select>
-          </label>
+          </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {[
-            {
-              key: 'time_limit' as const,
-              label: '时间限制（秒）',
-              min: 10,
-              max: 300,
-              step: 5,
-            },
-            {
-              key: 'max_solutions' as const,
-              label: '最大解数',
-              min: 1,
-              max: 10,
-              step: 1,
-            },
-            {
-              key: 'credit_overflow_ratio' as const,
-              label: '学分溢出比例',
-              min: 0,
-              max: 0.5,
-              step: 0.05,
-            },
-            {
-              key: 'campus_transition_time' as const,
-              label: '校区转换时间（分钟）',
-              min: 0,
-              max: 120,
-              step: 1,
-            },
-          ].map((field) => (
-            <label key={field.key} className="space-y-2">
-              <span className="text-sm font-medium text-[#24312c]">{field.label}</span>
+        {/* Numeric fields */}
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          {([
+            { key: 'time_limit'            as const, label: '时间限制', unit: 's', min: 10,  max: 300, step: 5    },
+            { key: 'max_solutions'         as const, label: '最大解数', unit: '',  min: 1,   max: 10,  step: 1    },
+            { key: 'credit_overflow_ratio' as const, label: '溢出比例', unit: '',  min: 0,   max: 0.5, step: 0.05 },
+            { key: 'campus_transition_time'as const, label: '转场节次', unit: '',  min: 0,   max: 10,  step: 1    },
+          ] as const).map((f) => (
+            <label key={f.key}>
+              <span className="mb-1 block text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>
+                {f.label}{f.unit && <span className="ml-1 opacity-60">({f.unit})</span>}
+              </span>
               <input
                 type="number"
-                min={field.min}
-                max={field.max}
-                step={field.step}
-                value={value[field.key]}
-                onChange={(event) =>
-                  onChange(
-                    updateConfig(
-                      value,
-                      field.key,
-                      field.key === 'credit_overflow_ratio'
-                        ? Number(event.target.value)
-                        : Number.parseInt(event.target.value || '0', 10),
-                    ),
-                  )
+                min={f.min}
+                max={f.max}
+                step={f.step}
+                value={value[f.key]}
+                onChange={(e) =>
+                  onChange(updateConfig(value, f.key,
+                    f.key === 'credit_overflow_ratio'
+                      ? Number(e.target.value)
+                      : Number.parseInt(e.target.value || '0', 10),
+                  ))
                 }
-                className="w-full rounded-[1rem] border border-[#d9cdb9] bg-white px-3 py-3 text-sm text-[#24312c] outline-none transition focus:border-[#7c8d6f] focus:ring-2 focus:ring-[#c9d6b9]"
+                className="input-base"
               />
             </label>
           ))}
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e6d8bf] pt-4">
-          <div className="flex items-center gap-2">
-            <Pill tone={isDirty ? 'warning' : 'success'}>
-              {isDirty ? '有未保存修改' : '配置已同步'}
-            </Pill>
-            <span className="text-xs text-[#65726a]">
-              建议先保存参数，再启动排课任务，避免前后端配置不一致。
-            </span>
-          </div>
-
+        {/* Footer */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3"
+             style={{ borderColor: 'var(--border-subtle)' }}>
+          <Pill tone={isDirty ? 'warning' : 'success'}>
+            {isDirty ? '有未保存修改' : '配置已同步'}
+          </Pill>
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={onReset}
-              className="inline-flex items-center gap-2 rounded-full border border-[#d9cdb9] bg-white px-4 py-2 text-sm font-medium text-[#24312c] transition hover:bg-[#f7f0e4]"
-            >
-              <RotateCcw className="h-4 w-4" />
+            <button type="button" onClick={onReset} className="btn-ghost">
+              <RotateCcw className="h-3.5 w-3.5" />
               重置
             </button>
             <button
               type="button"
               onClick={onSave}
               disabled={!isDirty || isSaving}
-              className="inline-flex items-center gap-2 rounded-full bg-[#173327] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#204232] disabled:cursor-not-allowed disabled:opacity-50"
+              className="btn-primary"
             >
-              <Save className="h-4 w-4" />
-              {isSaving ? '保存中' : '保存配置'}
+              <Save className="h-3.5 w-3.5" />
+              {isSaving ? '保存中…' : '保存'}
             </button>
           </div>
         </div>
@@ -161,5 +138,3 @@ export function SchedulingConfigPanel({
     </Surface>
   );
 }
-
-export default SchedulingConfigPanel;

@@ -1,40 +1,30 @@
 #!/usr/bin/env python3
-"""
-UI对话框包初始化文件
-支持课程补充测试功能和学分设置功能
+"""UI 对话框包
+
+课程/学分相关对话框与补充测试结果对话框的统一入口。
+
+历史问题（已修复）：
+之前仓库里同时存在 ``ui/dialogs.py`` 模块和 ``ui/dialogs/`` 包。Python 中包会
+遮蔽同名模块，导致：
+
+* ``ui/__init__.py`` 里的 ``from .dialogs import TimeSlotDialog`` 静默失败，
+  落进 ``except ImportError`` 分支；
+* 本文件只能用 ``importlib.util.spec_from_file_location`` 手动加载
+  ``dialogs.py``，把同一批类在 ``ui_dialogs_module`` 这个假模块名下**重复加载一次**，
+  于是 ``isinstance`` / ``except`` 之类基于类身份的判断会失效；
+* 加载失败时被 ``except Exception: pass`` 吞掉，对话框会变成 ``None``，
+  真正报错要等到用户点开对话框才出现。
+
+现在 ``dialogs.py`` 已并入本包，成为常规子模块 ``course_dialogs``，
+不再有动态加载和名字遮蔽。
 """
 
-# 导入课程补充测试结果对话框
+from .course_dialogs import (
+    CategorySettingDialog,
+    CreditSettingsDialog,
+    TimeSlotDialog,
+)
 from .supplement_result_dialog import SupplementResultDialog
-
-
-# 使用延迟导入来避免循环导入问题
-def _get_dialog_class(class_name):
-    """延迟获取对话框类"""
-    try:
-        import os
-        import importlib.util
-
-        # 直接导入dialogs.py文件
-        dialogs_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)), "dialogs.py"
-        )
-        if os.path.exists(dialogs_path):
-            spec = importlib.util.spec_from_file_location(
-                "ui_dialogs_module", dialogs_path
-            )
-            dialogs_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(dialogs_module)
-            return getattr(dialogs_module, class_name, None)
-    except Exception:
-        pass
-    return None
-
-
-# 立即获取对话框类
-TimeSlotDialog = _get_dialog_class("TimeSlotDialog")
-CategorySettingDialog = _get_dialog_class("CategorySettingDialog")
-CreditSettingsDialog = _get_dialog_class("CreditSettingsDialog")
 
 __all__ = [
     "TimeSlotDialog",

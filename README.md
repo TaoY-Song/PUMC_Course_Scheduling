@@ -50,13 +50,19 @@ cd ..
 
 ## 启动
 
-### 启动 Qt 桌面版（功能齐全无Bug）
+### 启动 Qt 桌面版
 
 ```powershell
 python app.py
 ```
 
-### 启动 Web 版（可能有Bug，暂时没测试出来）
+可选参数：
+
+```powershell
+python app.py --log-level DEBUG
+```
+
+### 启动 Web 版
 
 首次运行或前端有改动时，先构建前端：
 
@@ -127,6 +133,8 @@ npm run dev
 
 ### 第三步：设置学分要求
 
+默认值是**整个学位阶段**的培养方案总量。做单学期排课时，应填写本学期尚需完成的学分缺口；否则目标高于本学期课程供给时，优化模式可能合理地舍弃无法改善目标的课程。
+
 进入“学分设置”页面后：
 
 1. 查看当前各类别学分目标
@@ -180,7 +188,7 @@ npm run dev
 
 ## 常见问题（建议询问AI）
 
-### 1. `ortools` 安装失败
+### 1. 依赖安装失败
 
 优先在虚拟环境中执行：
 
@@ -198,7 +206,17 @@ $env:TMP="$PWD\\.tmp"
 python -m pip install -r requirements.txt --no-cache-dir
 ```
 
-### 2. Web 页面打不开
+### 2. 排课还需要 `ortools` 吗？
+
+不需要。排课算法是纯 Python 的回溯搜索，`ortools` 已从依赖中移除。
+
+历史上仓库里有一份基于 OR-Tools CP-SAT 的实现，但它没有任何调用方且并未完成
+（时间约束、校区约束、每日上限的函数体是空的），同时在 Windows 上还会与 pandas
+发生原生库冲突而报 `OSError: [WinError 127]`。这部分死代码已经删除。
+
+如果你在旧环境里装过 `ortools`，保留或卸载都不影响本项目运行。
+
+### 3. Web 页面打不开
 
 先检查：
 
@@ -206,7 +224,7 @@ python -m pip install -r requirements.txt --no-cache-dir
 - `web/dist` 是否已经生成
 - 如果前端还没构建，先执行 `cd web` 和 `npm run build`
 
-### 3. 补充测试提示没有课程源
+### 4. 补充测试提示没有课程源
 
 说明当前会话里没有可用的课程一览表缓存。
 
@@ -217,18 +235,25 @@ python -m pip install -r requirements.txt --no-cache-dir
 
 ## 常用命令
 
+运行测试：
+
+```powershell
+python -m pytest
+```
+
+跳过较慢的求解器超时测试：
+
+```powershell
+python -m pytest -m "not slow"
+```
+
 前端检查：
 
 ```powershell
 cd web
 npm run type-check
+npm run lint
 npm run build
-```
-
-后端语法检查：
-
-```powershell
-python -m py_compile app_web.py web_backend\server.py web_backend\api\courses.py web_backend\api\export.py web_backend\api\supplement.py
 ```
 
 单独运行补充测试脚本：
@@ -236,6 +261,21 @@ python -m py_compile app_web.py web_backend\server.py web_backend\api\courses.py
 ```powershell
 python scripts/course_supplement_test.py
 ```
+
+## 日志
+
+默认只输出 WARNING 及以上的日志。需要查看排课搜索过程时：
+
+```powershell
+# 方式一：命令行参数
+python app.py --log-level DEBUG
+python app_web.py --log-level DEBUG
+
+# 方式二：环境变量
+$env:PUMC_LOG_LEVEL="DEBUG"
+```
+
+Qt 版会同时把输出写入项目根目录的 `app.log`。
 
 ## License
 

@@ -5,9 +5,13 @@ PUMC交互式排课系统 - 应用程序入口
 
 import sys
 import os
+import argparse
 from datetime import datetime
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QIcon
+
+from core.app_paths import default_log_path, resource_path
+from core.logging_config import configure_logging
 from ui.main_window import MainWindow
 
 
@@ -79,12 +83,26 @@ class TeeOutput:
 
 def main():
     """主函数"""
+    parser = argparse.ArgumentParser(description="PUMC 交互式排课系统（Qt 桌面版）")
+    parser.add_argument(
+        "--log-level",
+        default=None,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="日志级别（默认 WARNING；DEBUG 会输出排课搜索过程）",
+    )
+    args, _ = parser.parse_known_args()
+
+    # 日志级别也可通过环境变量 PUMC_LOG_LEVEL 设置
+    if args.log_level:
+        os.environ["PUMC_LOG_LEVEL"] = args.log_level
+    configure_logging(force=True)
+
     # 保存原始输出流
     original_stdout = sys.stdout
     original_stderr = sys.stderr
 
-    # 创建日志文件路径（在项目根目录下）
-    log_file_path = os.path.join(os.path.dirname(__file__), "app.log")
+    # 日志写可写位置：打包安装到 Program Files 后程序目录是只读的。
+    log_file_path = str(default_log_path("app.log"))
 
     # 创建日志管理器
     log_manager = LogManager(log_file_path)
@@ -101,8 +119,8 @@ def main():
         # 创建Qt应用程序
         app = QApplication(sys.argv)
 
-        # 设置应用程序图标
-        icon_path = os.path.join(os.path.dirname(__file__), "PUMClogo.ico")
+        # 图标作为捐绑资源取：冻结后它在 sys._MEIPASS 下，不在 __file__ 旁边。
+        icon_path = str(resource_path("PUMClogo.ico"))
         if os.path.exists(icon_path):
             app.setWindowIcon(QIcon(icon_path))
             print(f"✅ 图标已加载: {icon_path}")

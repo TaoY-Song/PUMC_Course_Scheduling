@@ -3,10 +3,12 @@ import {
   BookOpenText,
   BrainCircuit,
   FlaskConical,
-  LayoutDashboard,
   ShieldCheck,
+  Activity,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
-import { NavLink, Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import { NavLink, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { healthCheck } from './lib/workbenchApi';
 import { CoursesPage } from './pages/CoursesPage';
 import { SchedulingPage } from './pages/SchedulingPage';
@@ -22,28 +24,54 @@ const NAV_ITEMS = [
   {
     to: '/courses',
     label: '课程工作台',
-    description: '导入课程、管理已选课程、编辑时间段',
+    short: '课程',
     icon: BookOpenText,
   },
   {
     to: '/scheduling',
     label: '智能排课',
-    description: '配置参数、执行排课、查看结果与周课表',
+    short: '排课',
     icon: BrainCircuit,
   },
   {
     to: '/settings',
     label: '学分设置',
-    description: '维护学分要求并查看完成进度',
+    short: '学分',
     icon: ShieldCheck,
   },
   {
     to: '/supplement',
     label: '补充测试',
-    description: '调用补充测试脚本并下载结果与日志',
+    short: '测试',
     icon: FlaskConical,
   },
 ] as const;
+
+// ─── Sidebar SVG grid pattern ─────────────────────────────────────────────────
+function GridPattern() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 h-full w-full"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <defs>
+        <pattern id="sidebar-grid" width="28" height="28" patternUnits="userSpaceOnUse">
+          <path d="M 28 0 L 0 0 0 28" fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="0.5" />
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#sidebar-grid)" />
+    </svg>
+  );
+}
+
+// ─── Page title lookup ────────────────────────────────────────────────────────
+const PAGE_META: Record<string, { title: string; sub: string }> = {
+  '/courses':    { title: '课程工作台', sub: 'Course Workbench' },
+  '/scheduling': { title: '智能排课',   sub: 'Scheduling Engine' },
+  '/settings':   { title: '学分设置',   sub: 'Credit Settings' },
+  '/supplement': { title: '补充测试',   sub: 'Supplement Test' },
+};
 
 function AppShell({
   health,
@@ -54,126 +82,196 @@ function AppShell({
   loading: boolean;
   error: string | null;
 }) {
+  const { pathname } = useLocation();
+  const meta = PAGE_META[pathname] ?? { title: 'PUMC 排课', sub: 'Workbench' };
+
   return (
-    <div className="relative min-h-screen overflow-hidden text-[#17221d]">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[24rem] bg-[radial-gradient(circle_at_top_left,_rgba(205,169,89,0.26),_transparent_42%),radial-gradient(circle_at_top_right,_rgba(36,84,68,0.2),_transparent_36%)]" />
-      <div className="relative mx-auto flex min-h-screen w-full max-w-[1600px] gap-6 px-4 py-4 sm:px-6 lg:px-8">
-        <aside className="hidden w-[340px] shrink-0 rounded-[2rem] border border-[#d7cbb4] bg-[linear-gradient(180deg,rgba(18,33,28,0.98),rgba(29,53,45,0.95))] p-6 text-[#f6efe1] shadow-[0_30px_90px_rgba(10,21,18,0.25)] lg:flex lg:flex-col">
-          <div>
-            <div className="inline-flex items-center gap-3 rounded-full border border-white/15 bg-white/8 px-4 py-2 text-[0.72rem] uppercase tracking-[0.32em] text-[#d9c8a2]">
-              <img
-                src="/PUMClogo.ico"
-                alt="PUMC Logo"
-                className="h-5 w-5 rounded-sm object-contain"
-              />
-              PUMC Scheduling
+    <div className="flex min-h-svh">
+
+      {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
+      <aside
+        className="sidebar-grid relative hidden w-56 shrink-0 flex-col lg:flex"
+        style={{ background: '#071615', color: '#e8eeec' }}
+      >
+        <GridPattern />
+
+        {/* Logo area */}
+        <div className="relative z-10 flex flex-col gap-1 border-b px-5 pb-5 pt-6"
+             style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-7 w-7 items-center justify-center rounded-md overflow-hidden border"
+                 style={{ borderColor: 'rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.06)' }}>
+              <img src="/PUMClogo.ico" alt="" className="h-5 w-5 object-contain" />
             </div>
-            <h1 className="mt-6 max-w-[16rem] font-['Iowan_Old_Style','Palatino_Linotype','Book_Antiqua',Georgia,serif] text-[2rem] leading-[1.12] tracking-[0.01em] text-[#f4edde]">
-              <span className="block">PUMC排课系统</span>
-              <span className="mt-1 block">V2.0.0</span>
-            </h1>
-            <p className="mt-5 max-w-[17rem] text-sm leading-7 text-[#d8ddcf]">
-              用浏览器承接 Qt 版排班能力。课程导入、已选课程管理、智能排课、补充测试与结果导出统一收口到同一套工作流。
-            </p>
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em]"
+                  style={{ color: '#8faaa6' }}>
+              PUMC
+            </span>
+          </div>
+          <p className="mt-2 font-mono text-base font-semibold leading-tight tracking-tight"
+             style={{ color: '#e8eeec' }}>
+            排课系统
+          </p>
+          <p className="font-mono text-[10px]" style={{ color: '#4d7770' }}>v2.0.0</p>
+        </div>
+
+        {/* Nav */}
+        <nav aria-label="主导航" className="relative z-10 flex flex-col gap-0.5 px-3 py-4">
+          {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              className={({ isActive }) =>
+                [
+                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150',
+                  isActive
+                    ? 'text-white'
+                    : 'hover:bg-white/5',
+                ].join(' ')
+              }
+              style={({ isActive }) => isActive
+                ? { background: 'var(--accent-ui)', color: 'white' }
+                : { color: '#8faaa6' }}
+            >
+              {({ isActive }) => (
+                <>
+                  <Icon
+                    className="h-4 w-4 shrink-0"
+                    style={{ opacity: isActive ? 1 : 0.7 }}
+                  />
+                  {label}
+                </>
+              )}
+            </NavLink>
+          ))}
+        </nav>
+
+        {/* Status footer */}
+        <div className="relative z-10 mt-auto border-t px-4 py-4"
+             style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+          <div className="flex items-center gap-2.5">
+            {loading
+              ? <span className="dot-loading" />
+              : error
+                ? <span className="dot-offline" />
+                : <span className="dot-online" />}
+            <div>
+              <p className="text-[11px] font-medium" style={{ color: '#8faaa6' }}>
+                {loading ? '连接中…' : error ? '后端离线' : `${health?.status ?? 'healthy'}`}
+              </p>
+              {!loading && !error && (
+                <p className="text-[10px]" style={{ color: '#3d5c58' }}>
+                  v{health?.version ?? '1.0.0'} · local
+                </p>
+              )}
+            </div>
+            <div className="ml-auto">
+              {error
+                ? <WifiOff className="h-3.5 w-3.5" style={{ color: '#f87171', opacity: 0.8 }} />
+                : <Wifi className="h-3.5 w-3.5" style={{ color: '#4ade80', opacity: loading ? 0.4 : 0.8 }} />}
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* ── Main ────────────────────────────────────────────────────────────── */}
+      <div className="flex min-w-0 flex-1 flex-col" style={{ background: 'var(--bg-base)' }}>
+
+        {/* Topbar */}
+        <header
+          className="sticky top-0 z-20 flex items-center justify-between gap-4 border-b px-4 py-3 sm:px-6"
+          style={{
+            background: 'rgba(244,242,237,0.88)',
+            backdropFilter: 'blur(12px)',
+            borderColor: 'var(--border-card)',
+          }}
+        >
+          {/* Mobile brand + active page */}
+          <div className="flex items-center gap-3 lg:gap-0">
+            <img
+              src="/PUMClogo.ico"
+              alt="PUMC"
+              className="h-7 w-7 rounded object-contain lg:hidden"
+            />
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] lg:hidden"
+                 style={{ color: 'var(--text-muted)' }}>
+                {meta.sub}
+              </p>
+              <h1 className="text-sm font-semibold lg:text-base" style={{ color: 'var(--text-primary)' }}>
+                {meta.title}
+              </h1>
+            </div>
           </div>
 
-          <div className="mt-8 grid gap-3">
-            {NAV_ITEMS.map((item) => {
-              const Icon = item.icon;
-              return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    [
-                      'rounded-[1.5rem] border px-4 py-4 transition-all',
-                      isActive
-                        ? 'border-[#d1b575] bg-[#f5ebd4] text-[#10201b] shadow-[0_18px_50px_rgba(0,0,0,0.18)]'
-                        : 'border-white/10 bg-white/5 text-[#edf1e8] hover:bg-white/8',
-                    ].join(' ')
-                  }
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 rounded-2xl border border-current/15 bg-current/10 p-2.5">
-                      <Icon className="h-[18px] w-[18px]" />
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold">{item.label}</div>
-                      <div className="mt-1 text-xs leading-5 opacity-80">{item.description}</div>
-                    </div>
-                  </div>
-                </NavLink>
-              );
-            })}
-          </div>
-
-          <div className="mt-auto rounded-[1.5rem] border border-white/10 bg-white/5 p-4 text-sm">
-            <div className="text-[0.68rem] uppercase tracking-[0.3em] text-[#c8b48a]">系统状态</div>
-            <div className="mt-3 flex items-center justify-between">
-              <span className="text-[#dfe8db]">后端健康</span>
-              <span
-                className={[
-                  'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium',
-                  error
-                    ? 'bg-[#5a2323] text-[#ffdfdf]'
-                    : loading
-                      ? 'bg-[#4e4524] text-[#f9efc2]'
-                      : 'bg-[#1f4a3c] text-[#d4f2e3]',
-                ].join(' ')}
-              >
-                {error ? '异常' : loading ? '检查中' : health?.status ?? '未知'}
-              </span>
-            </div>
-            <div className="mt-2 text-xs text-[#c9d1c6]">
-              版本 {health?.version ?? '1.0.0'} · 单用户本地会话
+          {/* Right area */}
+          <div className="flex items-center gap-2">
+            {/* Health indicator — desktop */}
+            <div className="hidden items-center gap-2 rounded-md border px-2.5 py-1 text-xs lg:flex"
+                 style={{ borderColor: 'var(--border-card)', color: 'var(--text-muted)' }}>
+              <Activity className="h-3 w-3" />
+              {loading ? '检查中' : error ? '后端离线' : '系统正常'}
             </div>
           </div>
-        </aside>
+        </header>
 
-        <main className="flex min-h-[calc(100vh-2rem)] flex-1 flex-col rounded-[2rem] border border-[#ddd0bb] bg-[rgba(255,250,240,0.88)] shadow-[0_35px_90px_rgba(20,34,28,0.14)] backdrop-blur-xl">
-          <header className="border-b border-[#eadfcb] px-5 py-4 sm:px-7">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <img
-                  src="/PUMClogo.ico"
-                  alt="PUMC Logo"
-                  className="mt-1 h-10 w-10 rounded-xl border border-[#dfd1ba] bg-white/80 p-1.5 object-contain shadow-sm lg:hidden"
-                />
-                <div>
-                  <div className="text-[0.72rem] uppercase tracking-[0.34em] text-[#8a7c63]">
-                    Browser Workbench
-                  </div>
-                  <h2 className="mt-2 text-2xl font-semibold text-[#16211d]">
-                    PUMC 智能排班系统
-                  </h2>
-                </div>
+        {/* Mobile nav strip */}
+        <nav
+          aria-label="主导航"
+          className="flex gap-1 overflow-x-auto border-b px-3 py-2 lg:hidden"
+          style={{ borderColor: 'var(--border-card)' }}
+        >
+          {NAV_ITEMS.map(({ to, short, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              className={({ isActive }) =>
+                [
+                  'flex shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-all',
+                  isActive ? 'text-white' : 'text-[--text-secondary]',
+                ].join(' ')
+              }
+              style={({ isActive }) =>
+                isActive
+                  ? { background: 'var(--accent-ui)', color: 'white' }
+                  : { color: 'var(--text-secondary)' }}
+            >
+              {({ isActive }) => (
+                <>
+                  <Icon className="h-3.5 w-3.5" style={{ opacity: isActive ? 1 : 0.6 }} />
+                  {short}
+                </>
+              )}
+            </NavLink>
+          ))}
+        </nav>
+
+        {/* Content */}
+        <main className="flex-1 px-4 py-5 sm:px-6 sm:py-6">
+          {error ? (
+            <div
+              className="mx-auto mt-8 max-w-lg rounded-xl border p-6"
+              style={{ borderColor: '#fca5a5', background: '#fff5f5' }}
+              role="alert"
+            >
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em]"
+                 style={{ color: '#b91c1c' }}>
+                Connection Error
+              </p>
+              <h2 className="mt-2 text-base font-semibold" style={{ color: '#7f1d1d' }}>
+                无法连接到 Web 后端
+              </h2>
+              <p className="mt-1.5 text-sm leading-6" style={{ color: '#991b1b' }}>
+                {error}
+              </p>
+              <div className="mt-4 rounded-lg border px-3 py-2 font-mono text-xs"
+                   style={{ borderColor: '#fca5a5', color: '#7f1d1d' }}>
+                python app_web.py --dev
               </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="inline-flex items-center gap-2 rounded-full border border-[#ddcfb7] bg-white/85 px-3 py-1.5 text-xs text-[#465048]">
-                  <LayoutDashboard className="h-3.5 w-3.5" />
-                  Qt 桌面版 + Web 工作台
-                </div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-[#ddcfb7] bg-[#f4eddc] px-3 py-1.5 text-xs text-[#5c4d29]">
-                  本地会话 / 浏览器可用
-                </div>
-              </div>
             </div>
-          </header>
-
-          <div className="flex-1 px-4 py-4 sm:px-6 sm:py-6 lg:px-7">
-            {error ? (
-              <div className="mx-auto mt-10 max-w-2xl rounded-[1.75rem] border border-[#e2c5bf] bg-[#fff7f5] p-8 shadow-[0_22px_55px_rgba(106,38,23,0.08)]">
-                <div className="text-[0.72rem] uppercase tracking-[0.34em] text-[#b86c5d]">Backend</div>
-                <h3 className="mt-3 text-2xl font-semibold text-[#702f22]">无法连接到 Web 后端</h3>
-                <p className="mt-3 text-sm leading-7 text-[#87473b]">{error}</p>
-                <div className="mt-6 rounded-2xl border border-[#ead2cb] bg-white px-4 py-3 font-mono text-sm text-[#5f2d25]">
-                  python app_web.py --dev
-                </div>
-              </div>
-            ) : (
-              <Outlet />
-            )}
-          </div>
+          ) : (
+            <Outlet />
+          )}
         </main>
       </div>
     </div>
@@ -186,31 +284,19 @@ function App() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const runHealthCheck = async () => {
-      try {
-        const data = await healthCheck();
-        setHealth(data);
-        setError(null);
-      } catch (caughtError) {
-        setError(caughtError instanceof Error ? caughtError.message : '无法连接到后端服务');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    runHealthCheck().catch((caughtError) => {
-      setError(caughtError instanceof Error ? caughtError.message : '健康检查失败');
-      setLoading(false);
-    });
+    healthCheck()
+      .then((data) => { setHealth(data); setError(null); })
+      .catch((err) => { setError(err instanceof Error ? err.message : '无法连接到后端'); })
+      .finally(() => setLoading(false));
   }, []);
 
   return (
     <Routes>
       <Route element={<AppShell health={health} loading={loading} error={error} />}>
         <Route path="/" element={<Navigate to="/courses" replace />} />
-        <Route path="/courses" element={<CoursesPage />} />
+        <Route path="/courses"    element={<CoursesPage />} />
         <Route path="/scheduling" element={<SchedulingPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/settings"   element={<SettingsPage />} />
         <Route path="/supplement" element={<SupplementPage />} />
       </Route>
     </Routes>

@@ -1,49 +1,37 @@
 # PUMC排课系统依赖包
 
-# GUI界面框架
+# GUI界面框架（Qt 桌面版）
 PyQt5==5.15.10
 PyQt5-Qt5==5.15.2
 PyQt5-sip==12.13.0
 
 # 核心数据处理
 pandas==2.0.3
-numpy==1.24.4
 openpyxl==3.1.2
-
-# OR-Tools约束求解器
-ortools==9.7.2996
-
-# Web界面
-streamlit==1.28.1
-plotly==5.17.0
-
-# 打包工具
-# pyinstaller==6.3.0
-
-# 其他依赖
-protobuf==4.25.1
-packaging>=23.2,<24
-wheel<0.46
-typing-extensions==4.8.0
-python-dateutil==2.8.2
-pytz==2023.3
-six==1.16.0
-
-# 开发和测试
-pytest==7.4.3
-pytest-cov==4.1.0
 xlrd>=2.0.1
 
+# Web 后端
 fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
 python-multipart>=0.0.6
-websockets>=12.0
-python-socketio>=5.9.0
 
-# Additional utilities
-python-jose[cryptography]>=3.3.0
-passlib[bcrypt]>=1.7.4
-aiofiles>=23.0.0
-httpx>=0.26.0
+# 开发和测试
+pytest==7.4.3
+pytest-cov==4.1.0
+
+# 打包工具（按需启用）
+# pyinstaller==6.3.0
+
+# 说明：以下包已从依赖中移除，因为代码中零引用
+#   streamlit / plotly      —— 早期原型的 UI，现已改为 React 前端
+#   python-jose / passlib   —— 从未实现过认证
+#   python-socketio         —— 实际使用的是 FastAPI 原生 WebSocket
+#   aiofiles / httpx        —— 无调用点（httpx 仍会作为 fastapi 测试附加依赖间接存在）
+#   ortools                 —— CP-SAT 代码路径不可达且未完成，已删除；
+#                              当前排课用的是纯 Python 回溯算法，无需此依赖。
+#                              （另：它在 Windows 上与 pandas 存在 DLL 加载冲突）
+# numpy / protobuf / websockets / typing-extensions / python-dateutil / pytz / six
+# 由 pandas / uvicorn / pydantic 作为传递依赖自行管理，不再在此固定版本，
+# 避免与上游要求冲突。

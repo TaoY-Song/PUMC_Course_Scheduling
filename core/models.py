@@ -7,6 +7,10 @@
 from dataclasses import dataclass
 from typing import List
 
+from .logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 @dataclass
 class Course:
@@ -122,12 +126,12 @@ class SelectedCourse:
                 and str(self.course.custom_category).lower() not in ["nan", "none", ""]
             ):
                 self.custom_category = self.course.custom_category
-                print(
+                logger.debug(
                     f"   📋 使用Excel中的自定义类别: {self.course.code} -> {self.custom_category}"
                 )
             else:
                 self.custom_category = self._auto_assign_category()
-                print(
+                logger.debug(
                     f"   🔄 自动分配类别: {self.course.code} -> {self.custom_category}"
                 )
 

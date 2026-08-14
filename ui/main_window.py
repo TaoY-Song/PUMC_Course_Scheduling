@@ -106,6 +106,34 @@ class CategoryComboDelegate(QStyledItemDelegate):
                     pass
 
 
+class SchedulingThread(QThread):
+    """排课执行线程
+
+    🔧 P1 修复：之前 _start_scheduling() 直接在 UI 线程调用
+    scheduling_service.execute()，复杂数据下界面会完全冻结。
+    课程导入已经用了 CourseLoadThread，但更耗时的排课反而没有。
+    """
+
+    finished = pyqtSignal(object)  # ScheduleResult 或 None
+    failed = pyqtSignal(str)  # 异常信息
+
+    def __init__(self, scheduling_service, selected_courses):
+        super().__init__()
+        self.scheduling_service = scheduling_service
+        # 排课线程必须使用隔离快照。Qt 主线程仍可能响应课程编辑操作，
+        # 若直接共享原列表/课程对象会造成跨线程数据竞争。
+        from copy import deepcopy
+
+        self.selected_courses = deepcopy(selected_courses)
+
+    def run(self):
+        try:
+            result = self.scheduling_service.execute(self.selected_courses)
+            self.finished.emit(result)
+        except Exception as exc:  # pragma: no cover - 防御性分支
+            self.failed.emit(str(exc))
+
+
 class CourseLoadThread(QThread):
     """课程加载线程"""
 
@@ -332,6 +360,13 @@ class ExportFunctionWidget(QWidget):
 
 class MainWindow(QMainWindow):
     """主窗口"""
+
+    # 🔧 P1 修复：排课现在跑在工作线程，service 层事件也从那个线程发出。
+    # Qt 控件只能在主线程操作，所以先转成信号，
+    # 由 Qt 自动排队到 GUI 线程再真正更新界面。
+    _sig_scheduling_started = pyqtSignal(object)
+    _sig_scheduling_completed = pyqtSignal(object)
+    _sig_scheduling_failed = pyqtSignal(object)
 
     def __init__(self):
         super().__init__()
@@ -631,12 +666,21 @@ class MainWindow(QMainWindow):
         )
 
         # 订阅服务层事件
-        self.event_manager.subscribe("scheduling_started", self._on_scheduling_started)
+        # 🔧 P1 修复：事件可能从排课工作线程发出，
+        # 先经由信号转回主线程，再操作 Qt 控件。
+        self._sig_scheduling_started.connect(self._handle_scheduling_started)
+        self._sig_scheduling_completed.connect(self._handle_scheduling_completed)
+        self._sig_scheduling_failed.connect(self._handle_scheduling_failed)
+
         self.event_manager.subscribe(
-            "scheduling_completed", self._on_scheduling_completed
+            "scheduling_started", self._sig_scheduling_started.emit
         )
-        self.event_manager.subscribe("scheduling_failed", self._on_scheduling_failed)
-        self.event_manager.subscribe("ortools_missing", self._on_ortools_missing)
+        self.event_manager.subscribe(
+            "scheduling_completed", self._sig_scheduling_completed.emit
+        )
+        self.event_manager.subscribe(
+            "scheduling_failed", self._sig_scheduling_failed.emit
+        )
 
         # 初始化算法配置
         self._update_scheduling_config()
@@ -842,6 +886,7 @@ class MainWindow(QMainWindow):
         selected_course = SelectedCourse(
             course=selected_course_obj,
             class_num=selected_course_obj.class_num,
+            time_slots=list(getattr(selected_course_obj, "time_slots", [])),
             is_online=is_online,
         )
 
@@ -976,14 +1021,61 @@ class MainWindow(QMainWindow):
 
         # 更新UI状态
         self.algorithm_control_widget.start_scheduling_button.setEnabled(False)
+        self.add_course_button.setEnabled(False)
+        self.result_display_widget.add_time_button.setEnabled(False)
+        self.result_display_widget.remove_course_button.setEnabled(False)
+        self.result_display_widget.clear_all_button.setEnabled(False)
         self.algorithm_control_widget.progress_label.setText("准备中...")
         self.algorithm_control_widget.status_label.setText("正在启动排课算法...")
 
-        # 执行排课
-        self.scheduling_service.execute(self.selected_courses)
+        # 🔧 P1 修复：在工作线程中执行排课，避免冻结 UI。
+        # 结果仍然主要通过事件机制处理；这里只负责恢复按钮可用态
+        # 和兑现线程内未被捕获的异常。
+        self._scheduling_thread = SchedulingThread(
+            self.scheduling_service, self.selected_courses
+        )
+        self._scheduling_thread.finished.connect(self._on_scheduling_thread_finished)
+        self._scheduling_thread.failed.connect(self._on_scheduling_thread_failed)
+        self._scheduling_thread.start()
 
-        # 所有结果（成功、失败、错误）都通过事件机制处理
-        # 这里不需要任何额外处理，避免重复处理
+    def _restore_course_editing_controls(self):
+        """排课线程结束后恢复课程编辑控件。"""
+        self.add_course_button.setEnabled(bool(self.class_combo.currentData()))
+        self.result_display_widget.add_time_button.setEnabled(True)
+        self.result_display_widget.remove_course_button.setEnabled(True)
+        self.result_display_widget.clear_all_button.setEnabled(True)
+
+    def _on_scheduling_thread_finished(self, result):
+        """排课线程结束（成功或返回 None）
+
+        具体的成功/失败展示仍由事件处理器负责，
+        这里只确保按钮不会永久置灰。
+        """
+        self.algorithm_control_widget.start_scheduling_button.setEnabled(True)
+        self._restore_course_editing_controls()
+
+    def _on_scheduling_thread_failed(self, message: str):
+        """排课线程抛出未捕获异常"""
+        self.algorithm_control_widget.start_scheduling_button.setEnabled(True)
+        self._restore_course_editing_controls()
+        self.algorithm_control_widget.progress_label.setText("失败")
+        self.algorithm_control_widget.status_label.setText("排课执行出错")
+        QMessageBox.critical(self, "排课失败", f"排课执行出错：{message}")
+
+    def _handle_scheduling_started(self, event):
+        """排课开始事件处理（主线程）"""
+        self.algorithm_control_widget.progress_label.setText("执行中...")
+        self.algorithm_control_widget.status_label.setText("排课算法正在运行...")
+
+    def _handle_scheduling_completed(self, event):
+        """排课完成事件处理（主线程）"""
+        result = event.data.get("result")
+        if result:
+            self._on_scheduling_completed_internal(result)
+
+    def _handle_scheduling_failed(self, event):
+        """排课失败事件处理（主线程）"""
+        self._on_scheduling_failed(event)
 
     def _on_scheduling_started(self, event):
         """排课开始事件处理"""
@@ -1035,11 +1127,6 @@ class MainWindow(QMainWindow):
         error_msg = event.data.get("error", "未知错误")
         self._on_scheduling_failed_internal(Exception(error_msg))
 
-    def _on_ortools_missing(self, event):
-        """OR-Tools缺失事件处理"""
-        error_msg = event.data.get("error", "OR-Tools导入错误")
-        self._on_ortools_missing_error(ImportError(error_msg))
-
     # 移除重复的分析逻辑 - 现在完全依赖服务层的分析
 
     # 移除重复的冲突检查方法 - 现在完全依赖服务层的分析
@@ -1053,26 +1140,6 @@ class MainWindow(QMainWindow):
 
         # 显示详细错误消息
         QMessageBox.critical(self, "智能排课失败", f"{str(error)}")
-
-    def _on_ortools_missing_error(self, error):
-        """OR-Tools缺失错误处理"""
-        # 恢复UI状态
-        self.algorithm_control_widget.start_scheduling_button.setEnabled(True)
-        self.algorithm_control_widget.progress_label.setText("失败")
-        self.algorithm_control_widget.status_label.setText("OR-Tools未安装")
-
-        # 显示专门的OR-Tools安装指导
-        QMessageBox.critical(
-            self,
-            "OR-Tools未安装",
-            f"排课功能需要OR-Tools库支持，但系统检测到该库未安装。\n\n"
-            f"错误详情：\n{str(error)}\n\n"
-            f"解决方案：\n"
-            f"请在命令行中运行以下命令安装OR-Tools：\n\n"
-            f"方法1：pip install ortools\n"
-            f"方法2：conda install -c conda-forge ortools\n\n"
-            f"安装完成后，请重启程序再试。",
-        )
 
     def update_credit_statistics(self):
         """更新学分统计"""

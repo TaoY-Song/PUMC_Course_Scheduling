@@ -149,61 +149,61 @@ class ConstraintChecker:
     def _check_period_campus_conflicts(
         self, weekday: int, day_courses: List
     ) -> List[ConflictInfo]:
-        """检查时段内校区冲突（考虑周次重叠）"""
+        """检查跨校区转场时间是否足够（考虑周次重叠）
+
+        🔧 P0 修复：之前本方法使用硬编码时段 (1-4, 5-8, 9-10)，
+        完全忽略 config.min_campus_transfer_time，导致 UI 上的
+        “校区转换时间”控件改了也不生效。
+        现在改为基于实际节次间隔判定：同一天、周次重叠、不同校区的
+        两门课，若间隔节数 < min_campus_transfer_time 则为冲突。
+        """
         conflicts = []
+        min_gap = self.config.min_campus_transfer_time
 
-        # 定义时段
-        periods = [
-            (1, 4),  # 时段1：第1-4节
-            (5, 8),  # 时段2：第5-8节
-            (9, 10),  # 时段3：第9-10节
-        ]
+        for i in range(len(day_courses)):
+            for j in range(i + 1, len(day_courses)):
+                course1, slot1 = day_courses[i]
+                course2, slot2 = day_courses[j]
 
-        # 按时段分组课程
-        for period_start, period_end in periods:
-            period_courses = []
+                # 同校区无需转场
+                if course1.course.campus == course2.course.campus:
+                    continue
 
-            for course, slot in day_courses:
-                # 检查时间段是否与当前时段有重叠
-                if (
-                    slot.start_section <= period_end
-                    and slot.end_section >= period_start
-                ):
-                    period_courses.append((course, slot))
+                # 必须周次重叠才会真实冲突
+                weeks_overlap = set(slot1.weeks) & set(slot2.weeks)
+                if not weeks_overlap:
+                    continue
 
-            # 检查同时段内的校区一致性（需要考虑周次重叠）
-            if len(period_courses) > 1:
-                # 检查每对课程是否有周次重叠且校区不同
-                for i in range(len(period_courses)):
-                    for j in range(i + 1, len(period_courses)):
-                        course1, slot1 = period_courses[i]
-                        course2, slot2 = period_courses[j]
+                # 计算两个时间段之间的空闲节数
+                if slot1.start_section <= slot2.start_section:
+                    earlier, later = slot1, slot2
+                else:
+                    earlier, later = slot2, slot1
 
-                        # 检查周次是否有重叠
-                        weeks1_set = set(slot1.weeks)
-                        weeks2_set = set(slot2.weeks)
-                        weeks_overlap = weeks1_set & weeks2_set
+                # 直接重叠（时间冲突）由 check_time_conflicts 负责，
+                # 这里只处理跨校区转场时间不足。
+                gap = later.start_section - earlier.end_section - 1
+                if gap >= min_gap:
+                    continue
 
-                        # 只有在周次重叠且校区不同时才产生冲突
-                        if (
-                            weeks_overlap
-                            and course1.course.campus != course2.course.campus
-                        ):
-                            overlap_weeks = sorted(list(weeks_overlap))
-                            weeks_str = (
-                                f"{overlap_weeks[0]}-{overlap_weeks[-1]}周"
-                                if len(overlap_weeks) > 1
-                                else f"{overlap_weeks[0]}周"
-                            )
+                overlap_weeks = sorted(weeks_overlap)
+                weeks_str = (
+                    f"{overlap_weeks[0]}-{overlap_weeks[-1]}周"
+                    if len(overlap_weeks) > 1
+                    else f"{overlap_weeks[0]}周"
+                )
 
-                            conflict = ConflictInfo(
-                                conflict_type="campus",
-                                course1=course1.course,
-                                course2=course2.course,
-                                description=f"校区冲突：{course1.course.campus} -> {course2.course.campus}（时段{period_start}-{period_end}节，{weeks_str}内必须同校区）",
-                                severity="medium",
-                            )
-                            conflicts.append(conflict)
+                conflict = ConflictInfo(
+                    conflict_type="campus",
+                    course1=course1.course,
+                    course2=course2.course,
+                    description=(
+                        f"校区转场时间不足：{course1.course.campus} -> {course2.course.campus}"
+                        f"（间隔 {gap} 节，需要 {min_gap} 节，{weeks_str}）"
+                    ),
+                    severity="medium",
+                )
+                conflicts.append(conflict)
 
         return conflicts
 
@@ -220,9 +220,13 @@ class ConstraintChecker:
             credits = selected_course.course.credits
             category_credits[category] += credits
 
-        # 检查学分要求
+        # 检查学分要求。actual_credits 必须包含用户设置的基础已修学分，
+        # 与引擎的 gap = required - completed 语义保持一致。
         for category, requirement in self.credit_manager.requirements.items():
-            actual_credits = category_credits.get(category, 0.0)
+            actual_credits = (
+                category_credits.get(category, 0.0)
+                + requirement.completed_credits
+            )
             required_credits = requirement.required_credits
 
             if actual_credits < required_credits:

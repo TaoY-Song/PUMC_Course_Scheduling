@@ -20,39 +20,35 @@ export function Modal({
   footer,
   widthClassName = 'max-w-3xl',
 }: ModalProps) {
-  if (!open) {
-    return null;
-  }
+  if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <button
         type="button"
         aria-label="关闭弹窗"
-        className="absolute inset-0 bg-[#09110f]/70 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/55 backdrop-blur-[2px]"
         onClick={onClose}
       />
-      <div className={`relative z-10 w-full ${widthClassName} overflow-hidden rounded-[1.75rem] border border-[#d7cbb4] bg-[#fffaf0] shadow-[0_30px_90px_rgba(5,15,12,0.28)]`}>
-        <div className="flex items-start justify-between gap-4 border-b border-[#eadfcb] px-6 py-5">
+      <div
+        className={`relative z-10 w-full ${widthClassName} overflow-hidden rounded-xl border bg-white shadow-2xl`}
+        style={{ borderColor: 'var(--border-base)' }}
+      >
+        <div className="flex items-start justify-between gap-4 border-b px-5 py-4"
+             style={{ borderColor: 'var(--border-card)', background: '#faf9f6' }}>
           <div>
-            <h3 className="text-xl font-semibold text-[#17221d]">{title}</h3>
-            {description && <p className="mt-1 text-sm leading-6 text-[#637268]">{description}</p>}
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--text-muted)' }}>Dialog</p>
+            <h3 id="modal-title" className="mt-0.5 text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+            {description && <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{description}</p>}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-[#d7cbb4] bg-white p-2 text-[#5e665f] transition hover:bg-[#f4ebdc]"
-          >
+          <button type="button" onClick={onClose} aria-label="关闭" className="btn-ghost p-2">
             <X className="h-4 w-4" />
           </button>
         </div>
-
-        <div className="max-h-[78vh] overflow-y-auto px-6 py-5">
-          {children}
-        </div>
-
+        <div className="max-h-[78vh] overflow-y-auto px-5 py-5">{children}</div>
         {footer && (
-          <div className="flex flex-wrap items-center justify-end gap-3 border-t border-[#eadfcb] px-6 py-4">
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t px-5 py-4"
+               style={{ borderColor: 'var(--border-card)', background: '#faf9f6' }}>
             {footer}
           </div>
         )}

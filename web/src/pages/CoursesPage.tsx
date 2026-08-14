@@ -13,9 +13,9 @@ import {
   Upload,
 } from 'lucide-react';
 import { Modal } from '../components/workbench/Modal';
-import { MetricCard, Pill, SectionTitle, Surface } from '../components/workbench/atoms';
+import { MetricCard, Pill, Surface } from '../components/workbench/atoms';
 import { TimeSlotEditor } from '../components/course/TimeSlotEditor';
-import { getCategoryOptions, getCategoryShortLabel } from '../lib/categories';
+import { getCategoryOptions, getCategoryShortLabel, isCategoryUnset } from '../lib/categories';
 import {
   addSelectedCourse,
   addTimeSlot,
@@ -35,18 +35,6 @@ import type { Course, CreditRequirement, SelectedCourse, TimeSlot } from '../typ
 
 type FeedbackTone = 'success' | 'error' | 'warning' | 'info';
 
-function toneClass(tone: FeedbackTone) {
-  switch (tone) {
-    case 'success':
-      return 'border-emerald-200 bg-emerald-50 text-emerald-900';
-    case 'error':
-      return 'border-rose-200 bg-rose-50 text-rose-900';
-    case 'warning':
-      return 'border-amber-200 bg-amber-50 text-amber-900';
-    default:
-      return 'border-sky-200 bg-sky-50 text-sky-900';
-  }
-}
 
 export function CoursesPage() {
   const [courses, setCourses] = useState<Course[]>([]);
@@ -71,6 +59,10 @@ export function CoursesPage() {
   const totalRequired = creditStatus.reduce((sum, item) => sum + item.required_credits, 0);
   const totalCompleted = creditStatus.reduce((sum, item) => sum + item.completed_credits, 0);
   const completionRate = totalRequired > 0 ? Math.round((totalCompleted / totalRequired) * 100) : 0;
+  // 类别为 nan 的课程不计入任何学分要求，排课时会被静默丢弃。
+  const unsetCategoryCourses = selectedCourses.filter((course) =>
+    isCategoryUnset(course.custom_category),
+  );
 
   const filteredCourses = courses.filter((course) => {
     const query = search.trim().toLowerCase();
@@ -349,453 +341,465 @@ export function CoursesPage() {
       : undefined;
 
   return (
-    <div className="space-y-6">
-      <input
-        ref={courseFileInputRef}
-        type="file"
-        accept=".xlsx,.xls"
-        className="hidden"
-        onChange={handleCourseFile}
-      />
-      <input
-        ref={importFileInputRef}
-        type="file"
-        accept=".xlsx,.xls"
-        className="hidden"
-        onChange={handleSelectedImport}
-      />
+    <div className="space-y-5">
+      <input ref={courseFileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleCourseFile} />
+      <input ref={importFileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleSelectedImport} />
 
-      <SectionTitle
-        eyebrow="Course Workbench"
-        title="课程编排与学分盘点"
-        description="这里承接 Qt 版的课程导入、选课、时间段配置和学分统计。数据加载、类别设置和时间安排已经收口到同一条浏览器工作流。"
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => courseFileInputRef.current?.click()}
-              disabled={busy}
-              className="inline-flex items-center gap-2 rounded-full border border-[#204537] bg-[#163228] px-4 py-2 text-sm font-medium text-[#f9f4e9] transition hover:bg-[#214739] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <Upload className="h-4 w-4" />
-              导入课程表
-            </button>
-            <button
-              type="button"
-              onClick={() => importFileInputRef.current?.click()}
-              disabled={busy || courses.length === 0}
-              className="inline-flex items-center gap-2 rounded-full border border-[#d7cbb4] bg-white px-4 py-2 text-sm font-medium text-[#34413a] transition hover:bg-[#f7efdf] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <FolderInput className="h-4 w-4" />
-              导入已选课程
-            </button>
-          </div>
-        }
-      />
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <MetricCard label="已加载课程" value={`${courses.length}`} hint="来自课程一览表的可选集合" tone="pine" />
-        <MetricCard label="当前已选" value={`${selectedCourses.length}`} hint="课程、类别与时间安排均可编辑" tone="amber" />
-        <MetricCard label="学分完成率" value={`${completionRate}%`} hint={`${totalCompleted.toFixed(1)} / ${totalRequired.toFixed(1)} 学分`} tone="sand" />
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--text-muted)' }}>
+            Course Workbench
+          </p>
+          <h2 className="mt-0.5 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>课程工作台</h2>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => courseFileInputRef.current?.click()} disabled={busy} className="btn-primary">
+            <Upload className="h-3.5 w-3.5" />
+            导入课程表
+          </button>
+          <button type="button" onClick={() => importFileInputRef.current?.click()}
+                  disabled={busy || courses.length === 0} className="btn-ghost">
+            <FolderInput className="h-3.5 w-3.5" />
+            导入已选
+          </button>
+        </div>
       </div>
 
+      {/* Metrics */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <MetricCard label="已加载课程" value={String(courses.length)} hint="可选集合" tone="pine" />
+        <MetricCard label="已选" value={String(selectedCourses.length)} hint="类别与时间可编辑" tone="teal" />
+        <MetricCard
+          label="学分完成率"
+          value={`${completionRate}%`}
+          hint={`${totalCompleted.toFixed(1)} / ${totalRequired.toFixed(1)} 学分`}
+          tone="sand"
+        />
+      </div>
+
+      {/* 未设置类别的课程会在排课时被忽略，必须在进排课页前就告知 */}
+      {unsetCategoryCourses.length > 0 && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border px-4 py-3 text-sm"
+          style={{ borderColor: '#fca5a5', background: '#fff5f5', color: '#991b1b' }}
+        >
+          <span className="font-medium">
+            {unsetCategoryCourses.length} 门已选课程尚未设置类别
+          </span>
+          <span>— 这些课程不计入学分统计，排课时会被忽略。请在“课程细节”逐门选定类别。</span>
+          <span className="font-mono text-[11px] opacity-80">
+            {unsetCategoryCourses.map((course) => course.course.course_code).join('、')}
+          </span>
+        </div>
+      )}
+
+      {/* Feedback */}
       {feedback && (
-        <div className={`rounded-[1.2rem] border px-4 py-3 text-sm ${toneClass(feedback.tone)}`}>
+        <div
+          role={feedback.tone === 'error' ? 'alert' : 'status'}
+          aria-live="polite"
+          className="flex items-start gap-2 rounded-lg border px-4 py-3 text-sm"
+          style={
+            feedback.tone === 'error'
+              ? { borderColor: '#fca5a5', background: '#fff5f5', color: '#991b1b' }
+              : feedback.tone === 'success'
+                ? { borderColor: '#99f6e4', background: '#f0fdfb', color: '#0f766e' }
+                : { borderColor: 'var(--border-base)', background: '#fffbf0', color: '#92400e' }
+          }
+        >
           {feedback.message}
         </div>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
-        <div className="space-y-6">
-          <Surface eyebrow="Catalog" title="课程源与筛选">
-            <div className="grid gap-4 lg:grid-cols-[0.92fr_1.08fr]">
-              <div className="rounded-[1.4rem] border border-[#e5d9c3] bg-white/85 p-4">
-                <div className="text-sm font-semibold text-[#1a2620]">本次导入说明</div>
-                <p className="mt-2 text-sm leading-7 text-[#5e695f]">
-                  支持 `xlsx / xls`，列映射和警告信息由后端返回。导入新课程表时，会话中的已选课程会按后端规则重置。
-                </p>
-                <div className="mt-4 space-y-2 text-sm text-[#667168]">
-                  <div className="flex items-start gap-2">
-                    <Check className="mt-0.5 h-4 w-4 text-[#285946]" />
-                    自动建立课程编码索引和班次集合
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <Check className="mt-0.5 h-4 w-4 text-[#285946]" />
-                    学分统计会和已选课程实时联动
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <Check className="mt-0.5 h-4 w-4 text-[#285946]" />
-                    时间段可在右侧直接增删改
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-[1.4rem] border border-[#e5d9c3] bg-[linear-gradient(135deg,rgba(24,48,40,0.98),rgba(44,87,72,0.92))] p-4 text-[#f5f0e5]">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-[0.72rem] uppercase tracking-[0.3em] text-[#d7c6a0]">Quick Filter</div>
-                    <div className="mt-2 text-lg font-semibold">筛掉噪音，保留有效课程</div>
-                  </div>
-                  <div className="rounded-2xl border border-white/15 bg-white/10 p-3">
-                    <Search className="h-5 w-5" />
-                  </div>
-                </div>
-                <div className="mt-4 rounded-[1.2rem] border border-white/12 bg-white/8 px-4 py-3">
-                  <input
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="搜索课程编码、名称、教师或类别"
-                    className="w-full bg-transparent text-sm text-white outline-none placeholder:text-[#d4ded7]"
-                  />
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2 text-xs text-[#f7efdf]">
-                  <Pill tone="neutral" className="border-white/10 bg-white/10 text-[#f6ecdc]">
-                    共 {filteredCourses.length} 条筛选结果
-                  </Pill>
-                  <Pill tone="neutral" className="border-white/10 bg-white/10 text-[#f6ecdc]">
-                    已选 {selectedCourses.length} 门
-                  </Pill>
-                </div>
-              </div>
-            </div>
-          </Surface>
-
-          <Surface
-            eyebrow="Inventory"
-            title="课程目录"
-            action={
-              <div className="inline-flex items-center gap-2 rounded-full border border-[#d8cdb8] bg-[#f7f0e0] px-3 py-1.5 text-xs text-[#6d5a35]">
-                <Layers3 className="h-3.5 w-3.5" />
-                目录视图
-              </div>
-            }
-          >
-            {loading ? (
-              <div className="py-10 text-sm text-[#677268]">正在加载课程目录...</div>
-            ) : (
-              <div className="overflow-hidden rounded-[1.35rem] border border-[#e6dbc8] bg-white">
-                <div className="max-h-[34rem] overflow-auto">
-                  <table className="min-w-full border-collapse text-left">
-                    <thead className="sticky top-0 z-10 bg-[#f6efdf] text-xs uppercase tracking-[0.18em] text-[#7a6d55]">
-                      <tr>
-                        <th className="px-4 py-3">课程</th>
-                        <th className="px-4 py-3">教师 / 校区</th>
-                        <th className="px-4 py-3">类别</th>
-                        <th className="px-4 py-3">学分</th>
-                        <th className="px-4 py-3 text-right">操作</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredCourses.map((course) => {
-                        const exists = selectedCourses.some(
-                          (selected) =>
-                            selected.course.course_code === course.course_code
-                            && selected.class_index === course.class_index,
-                        );
-
-                        return (
-                          <tr
-                            key={`${course.course_code}-${course.class_index}`}
-                            className="border-t border-[#eee4d1] align-top transition hover:bg-[#fffaf1]"
-                          >
-                            <td className="px-4 py-4">
-                              <div className="font-medium text-[#16211d]">{course.course_name}</div>
-                              <div className="mt-1 text-sm text-[#5f6a61]">
-                                {course.course_code} · 班次 {course.class_index}
-                              </div>
-                            </td>
-                            <td className="px-4 py-4 text-sm text-[#5f6a61]">
-                              <div>{course.teacher || '待定教师'}</div>
-                              <div className="mt-1">{course.campus || '未标记校区'}</div>
-                            </td>
-                            <td className="px-4 py-4">
-                              <div className="flex flex-wrap gap-2">
-                                <Pill tone="neutral">{course.category}</Pill>
-                                {course.is_online && <Pill tone="info">线上</Pill>}
-                              </div>
-                            </td>
-                            <td className="px-4 py-4 text-sm font-medium text-[#26342d]">
-                              {course.credits.toFixed(1)}
-                            </td>
-                            <td className="px-4 py-4 text-right">
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => (exists ? undefined : handleAddCourse(course))}
-                                className={[
-                                  'inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition',
-                                  exists
-                                    ? 'cursor-default border-[#d9d4c9] bg-[#f5f1e8] text-[#7b7467]'
-                                    : 'border-[#1f4739] bg-[#17362d] text-[#f9f5eb] hover:bg-[#21463a]',
-                                ].join(' ')}
-                              >
-                                {exists ? (
-                                  <>
-                                    <Check className="h-4 w-4" />
-                                    已在篮子
-                                  </>
-                                ) : (
-                                  <>
-                                    <Sparkles className="h-4 w-4" />
-                                    加入排课篮子
-                                  </>
-                                )}
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </Surface>
+      {/* Loading skeleton */}
+      {loading && (
+        <div className="py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+          初始化工作台…
         </div>
+      )}
 
-        <div className="space-y-6">
-          <Surface
-            eyebrow="Selection"
-            title="已选课程"
-            action={
-              <button
-                type="button"
-                disabled={busy || selectedCourses.length === 0}
-                onClick={handleClearSelectedCourses}
-                className="inline-flex items-center gap-2 rounded-full border border-[#dcc6bf] bg-[#fff6f4] px-3 py-1.5 text-xs font-medium text-[#8c3c33] transition hover:bg-[#ffede9] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                清空全部
-              </button>
-            }
-          >
-            {selectedCourses.length === 0 ? (
-              <div className="rounded-[1.3rem] border border-dashed border-[#d9cfbc] bg-[#faf4e7] px-4 py-8 text-center text-sm leading-7 text-[#6b675b]">
-                还没有已选课程。先从左侧目录把课程加入排课篮子。
+      {!loading && (
+        <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
+          {/* ── Left: catalog ── */}
+          <div className="min-w-0 space-y-4">
+            <Surface className="min-w-0">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h3 className="min-w-0 truncate text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>课程目录</h3>
+                <span className="tag tag-gray shrink-0">CATALOG</span>
               </div>
-            ) : (
-              <div className="rounded-[1.25rem] border border-[#ebe0cb] bg-[#fcf7ee] p-2">
-                <div className="max-h-[28rem] overflow-y-auto pr-1">
-                  <div className="space-y-3">
-                {selectedCourses.map((course) => (
-                  <button
-                    key={course.id}
-                    type="button"
-                    onClick={() => setSelectedCourseId(course.id)}
-                    className={[
-                      'w-full rounded-[1.3rem] border px-4 py-4 text-left transition',
-                      selectedCourse?.id === course.id
-                        ? 'border-[#1d4a3b] bg-[#17382e] text-[#f7f2e8] shadow-[0_20px_50px_rgba(20,34,28,0.18)]'
-                        : 'border-[#e8ddca] bg-white/90 text-[#1f2b25] hover:bg-[#fffaf2]',
-                    ].join(' ')}
-                  >
-                    <div className="flex items-start justify-between gap-3">
+
+              {/* Search */}
+              <div className="mb-3 flex items-center gap-2 rounded-lg border px-3 py-2"
+                   style={{ borderColor: 'var(--border-card)', background: 'var(--bg-sidebar)' }}>
+                <Search className="h-4 w-4 shrink-0" style={{ color: 'var(--text-on-dark-muted)' }} />
+                <input
+                  aria-label="搜索课程"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="搜索编码、名称、教师或类别"
+                  className="w-full bg-transparent text-sm text-white outline-none placeholder:opacity-50"
+                />
+                <span className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px]"
+                      style={{ background: 'rgba(255,255,255,0.15)', color: 'var(--text-on-dark-muted)' }}>
+                  {filteredCourses.length}
+                </span>
+              </div>
+
+              {courses.length === 0 ? (
+                <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed py-10 text-center"
+                     style={{ borderColor: 'var(--border-base)' }}>
+                  <Layers3 className="h-8 w-8 opacity-30" style={{ color: 'var(--text-muted)' }} />
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    尚未导入课程表。点击"导入课程表"开始。
+                  </p>
+                </div>
+              ) : filteredCourses.length === 0 ? (
+                <div className="py-8 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
+                  没有匹配的课程，请缩短关键词或清空搜索。
+                </div>
+              ) : (
+                <div className="min-w-0 overflow-hidden rounded-lg border" style={{ borderColor: 'var(--border-card)' }}>
+                  <div className="max-h-[32rem] overflow-auto">
+                    <table className="clinical-table min-w-full">
+                      <thead>
+                        <tr>
+                          <th className="text-left">课程</th>
+                          <th className="text-left">教师 / 校区</th>
+                          <th className="text-left">类别</th>
+                          <th className="text-left">学分</th>
+                          <th className="text-right">操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredCourses.map((course) => {
+                          const exists = selectedCourses.some(
+                            (s) =>
+                              s.course.course_code === course.course_code &&
+                              s.class_index === course.class_index,
+                          );
+                          return (
+                            <tr key={`${course.course_code}-${course.class_index}`}>
+                              <td>
+                                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                                  {course.course_name}
+                                </p>
+                                <p className="mt-0.5 font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                  {course.course_code} · 班次 {course.class_index}
+                                </p>
+                              </td>
+                              <td className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                                <p>{course.teacher || '待定'}</p>
+                                <p className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                  {course.campus || '—'}
+                                </p>
+                              </td>
+                              <td>
+                                <div className="flex flex-wrap gap-1">
+                                  <Pill tone="neutral">{course.category}</Pill>
+                                  {course.is_online && <Pill tone="info">线上</Pill>}
+                                </div>
+                              </td>
+                              <td className="text-sm tabular-nums" style={{ color: 'var(--text-secondary)' }}>
+                                {course.credits.toFixed(1)}
+                              </td>
+                              <td className="text-right">
+                                <button
+                                  type="button"
+                                  disabled={busy || exists}
+                                  onClick={() => {
+                                    if (!exists) { handleAddCourse(course).catch(() => undefined); }
+                                  }}
+                                  className={exists ? 'btn-ghost opacity-50' : 'btn-primary'}
+                                >
+                                  {exists ? (
+                                    <><Check className="h-3.5 w-3.5" />已选</>
+                                  ) : (
+                                    <><Sparkles className="h-3.5 w-3.5" />加入</>
+                                  )}
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </Surface>
+          </div>
+
+          {/* ── Right: selection + editing + credits ── */}
+          <div className="min-w-0 space-y-4">
+            {/* Selected list */}
+            <Surface className="min-w-0">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h3 className="min-w-0 truncate text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>已选课程</h3>
+                <button
+                  type="button"
+                  disabled={busy || selectedCourses.length === 0}
+                  onClick={() => { handleClearSelectedCourses().catch(() => undefined); }}
+                  className="btn-ghost text-rose-600"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  清空
+                </button>
+              </div>
+              {selectedCourses.length === 0 ? (
+                <div className="rounded-lg border border-dashed py-8 text-center text-xs"
+                     style={{ borderColor: 'var(--border-base)', color: 'var(--text-muted)' }}>
+                  还没有已选课程。从左侧目录加入。
+                </div>
+              ) : (
+                <div className="max-h-64 space-y-1.5 overflow-y-auto">
+                  {selectedCourses.map((c) => {
+                    const active = selectedCourse?.id === c.id;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setSelectedCourseId(c.id)}
+                        className="w-full rounded-lg border px-3 py-2.5 text-left transition"
+                        style={
+                          active
+                            ? { borderColor: 'var(--accent-ui)', background: 'var(--bg-sidebar)', color: 'var(--text-on-dark)' }
+                            : {
+                                borderColor: 'var(--border-subtle)',
+                                background: 'var(--bg-card)',
+                                color: 'var(--text-primary)',
+                              }
+                        }
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{c.course.course_name}</p>
+                            <p className="mt-0.5 font-mono text-[11px] opacity-70">
+                              {c.course.course_code} · 班次 {c.class_index}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveCourse(c.id).catch(() => undefined);
+                            }}
+                            className="shrink-0 rounded-md border px-1.5 py-0.5 text-[11px] opacity-70 hover:opacity-100"
+                            style={{ borderColor: 'currentColor' }}
+                          >
+                            移除
+                          </button>
+                        </div>
+                        <div className="mt-1 flex gap-1">
+                          <Pill tone={c.is_category_locked ? 'warning' : 'neutral'}>
+                            {c.is_category_locked ? '锁定' : '可改'}
+                          </Pill>
+                          <Pill tone={c.is_online ? 'info' : 'neutral'}>
+                            {c.is_online ? '线上' : '线下'}
+                          </Pill>
+                          {isCategoryUnset(c.custom_category) && (
+                            <Pill tone="danger">类别待设置</Pill>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </Surface>
+
+            {/* Course editor */}
+            <Surface className="min-w-0">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h3 className="min-w-0 truncate text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>课程细节</h3>
+                <span className="tag tag-gray shrink-0">EDIT</span>
+              </div>
+              {!selectedCourse ? (
+                <div className="rounded-lg border border-dashed py-8 text-center text-xs"
+                     style={{ borderColor: 'var(--border-base)', color: 'var(--text-muted)' }}>
+                  选择已选课程后在此编辑时间段与类别。
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="min-w-0 rounded-lg border px-3 py-3"
+                       style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-card)' }}>
+                    <p className="truncate text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                      {selectedCourse.course.course_name}
+                    </p>
+                    <p className="mt-0.5 font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      {selectedCourse.course.course_code} · 班次 {selectedCourse.class_index} ·{' '}
+                      {selectedCourse.course.teacher || '教师待定'}
+                    </p>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <label>
+                        <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.15em]"
+                              style={{ color: 'var(--text-muted)' }}>类别</span>
+                        <select
+                          value={selectedCourse.custom_category || ''}
+                          disabled={selectedCourse.is_category_locked}
+                          aria-label="课程类别"
+                          onChange={(e) => {
+                            handleCategoryChange(selectedCourse.id, e.target.value).catch(() => undefined);
+                          }}
+                          className="input-base"
+                          style={isCategoryUnset(selectedCourse.custom_category)
+                            ? { borderColor: '#fca5a5', background: '#fff5f5' }
+                            : undefined}
+                        >
+                          {isCategoryUnset(selectedCourse.custom_category) && (
+                            <option value="" disabled>
+                              请选择类别（未设置将被排课忽略）
+                            </option>
+                          )}
+                          {getCategoryOptions(
+                            selectedCourse.course.category,
+                            selectedCourse.custom_category,
+                          ).map((o) => (
+                            <option key={o} value={o}>{o}</option>
+                          ))}
+                        </select>
+                      </label>
                       <div>
-                        <div className="font-medium">{course.course.course_name}</div>
-                        <div className="mt-1 text-xs opacity-80">
-                          {course.course.course_code} · 班次 {course.class_index}
+                        <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.15em]"
+                              style={{ color: 'var(--text-muted)' }}>状态</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            className="btn-ghost"
+                            onClick={() => {
+                              handleOnlineToggle(selectedCourse.id, !selectedCourse.is_online).catch(
+                                () => undefined,
+                              );
+                            }}
+                          >
+                            {selectedCourse.is_online ? '改为线下' : '标记线上'}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-ghost"
+                            onClick={() => {
+                              handleLockToggle(
+                                selectedCourse.id,
+                                !selectedCourse.is_category_locked,
+                              ).catch(() => undefined);
+                            }}
+                          >
+                            {selectedCourse.is_category_locked ? (
+                              <><Lock className="h-3.5 w-3.5" />解锁</>
+                            ) : (
+                              <><LockKeyhole className="h-3.5 w-3.5" />锁定</>
+                            )}
+                          </button>
                         </div>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Time slots */}
+                  <div className="min-w-0 rounded-lg border px-3 py-3"
+                       style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-card)' }}>
+                    <div className="flex items-center justify-between gap-2 pb-2">
+                      <p className="min-w-0 truncate text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                        时间段 · {selectedCourse.time_slots.length} 条
+                      </p>
                       <button
                         type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleRemoveCourse(course.id).catch(() => undefined);
-                        }}
-                        className="rounded-full border border-current/15 px-2.5 py-1 text-xs"
+                        className="btn-primary"
+                        onClick={() => { setEditingTimeSlotIndex(null); setTimeSlotModalOpen(true); }}
                       >
-                        移除
+                        <CalendarPlus className="h-3.5 w-3.5" />
+                        新增
                       </button>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                      <Pill tone={course.is_category_locked ? 'warning' : 'neutral'}>
-                        {course.is_category_locked ? '类别锁定' : '类别可改'}
-                      </Pill>
-                      <Pill tone={course.is_online ? 'info' : 'neutral'}>
-                        {course.is_online ? '线上' : '线下'}
-                      </Pill>
-                    </div>
-                  </button>
-                  ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </Surface>
-
-          <Surface eyebrow="Editing" title="课程细节与时间安排">
-            {!selectedCourse ? (
-              <div className="rounded-[1.2rem] border border-dashed border-[#d9cfbc] bg-[#faf4e7] px-4 py-8 text-center text-sm text-[#6b675b]">
-                选择一门已选课程后，这里会展示类别、线上状态和时间段编辑。
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="rounded-[1.3rem] border border-[#e7ddc8] bg-white/90 p-4">
-                  <div className="text-lg font-semibold text-[#1a2620]">{selectedCourse.course.course_name}</div>
-                  <div className="mt-1 text-sm text-[#667269]">
-                    {selectedCourse.course.course_code} · 班次 {selectedCourse.class_index} · {selectedCourse.course.teacher || '教师待定'}
-                  </div>
-                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                    <label className="space-y-2">
-                      <div className="text-xs uppercase tracking-[0.22em] text-[#83775f]">课程类别</div>
-                      <select
-                        value={selectedCourse.custom_category || ''}
-                        disabled={selectedCourse.is_category_locked}
-                        onChange={(event) => {
-                          handleCategoryChange(selectedCourse.id, event.target.value).catch(() => undefined);
-                        }}
-                        className="w-full rounded-2xl border border-[#d7ccb8] bg-[#fffdfa] px-3 py-2 text-sm text-[#17211d] outline-none transition focus:border-[#8e7440] focus:ring-2 focus:ring-[#dcc79f] disabled:cursor-not-allowed disabled:bg-[#f1ede4]"
-                      >
-                        {getCategoryOptions(
-                          selectedCourse.course.category,
-                          selectedCourse.custom_category,
-                        ).map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <div className="space-y-2">
-                      <div className="text-xs uppercase tracking-[0.22em] text-[#83775f]">状态控制</div>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleOnlineToggle(selectedCourse.id, !selectedCourse.is_online).catch(() => undefined);
-                          }}
-                          className={[
-                            'inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition',
-                            selectedCourse.is_online
-                              ? 'border-sky-200 bg-sky-50 text-sky-900'
-                              : 'border-[#ddd1bd] bg-white text-[#435047]',
-                          ].join(' ')}
-                        >
-                          {selectedCourse.is_online ? '改为线下' : '标记线上'}
-                        </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleLockToggle(selectedCourse.id, !selectedCourse.is_category_locked).catch(() => undefined);
-                        }}
-                          className="inline-flex items-center gap-2 rounded-full border border-[#ddd1bd] bg-white px-3 py-2 text-sm font-medium text-[#435047] transition hover:bg-[#f8efde]"
-                        >
-                          {selectedCourse.is_category_locked ? (
-                            <>
-                              <Lock className="h-4 w-4" />
-                              解锁类别
-                            </>
-                          ) : (
-                            <>
-                              <LockKeyhole className="h-4 w-4" />
-                              锁定类别
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-[1.3rem] border border-[#e7ddc8] bg-white/90 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold text-[#1a2620]">时间段列表</div>
-                      <div className="mt-1 text-xs text-[#707a71]">
-                        当前共 {selectedCourse.time_slots.length} 个时间段。
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingTimeSlotIndex(null);
-                        setTimeSlotModalOpen(true);
-                      }}
-                      className="inline-flex items-center gap-2 rounded-full border border-[#1f4739] bg-[#17362d] px-3 py-2 text-sm font-medium text-[#f8f4ea] transition hover:bg-[#21463a]"
-                    >
-                      <CalendarPlus className="h-4 w-4" />
-                      新增时间段
-                    </button>
-                  </div>
-
-                  <div className="mt-4 space-y-3">
                     {selectedCourse.time_slots.length === 0 ? (
-                      <div className="rounded-[1.2rem] border border-dashed border-[#d9cfbc] bg-[#faf4e7] px-4 py-6 text-sm text-[#6b675b]">
-                        这门课还没有时间段。可以保持为空，用于线上课程或后续补录。
+                      <div className="rounded border border-dashed py-4 text-center text-[11px]"
+                           style={{ borderColor: 'var(--border-base)', color: 'var(--text-muted)' }}>
+                        暂无时间段（线上课程可留空）。
                       </div>
                     ) : (
-                      selectedCourse.time_slots.map((slot, index) => (
-                        <div key={`${selectedCourse.id}-${index}`} className="rounded-[1.2rem] border border-[#e8ddca] bg-[#fffaf1] px-4 py-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <div className="inline-flex items-center gap-2 text-sm font-medium text-[#223129]">
-                                <Clock3 className="h-4 w-4 text-[#8d7440]" />
+                      <div className="mt-1 space-y-1">
+                        {selectedCourse.time_slots.map((slot, index) => (
+                          <div
+                            key={`${selectedCourse.id}-${index}`}
+                            className="flex items-center justify-between gap-2 rounded-md px-2 py-2"
+                            style={{ background: '#faf9f6' }}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <Clock3 className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-ui)' }} />
+                              <span className="text-xs" style={{ color: 'var(--text-primary)' }}>
                                 {formatTimeSlot(slot)}
-                              </div>
-                              <div className="mt-2 text-xs text-[#6d766d]">
-                                {getCategoryShortLabel(selectedCourse.custom_category || selectedCourse.course.category)} · {selectedCourse.is_online ? '线上' : '线下'}
-                              </div>
+                              </span>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex gap-1">
                               <button
                                 type="button"
+                                className="btn-ghost px-2 py-1 text-[11px]"
                                 onClick={() => {
                                   setEditingTimeSlotIndex(index);
                                   setTimeSlotModalOpen(true);
                                 }}
-                                className="rounded-full border border-[#d5ccb8] bg-white px-3 py-1.5 text-xs font-medium text-[#3f4a43] transition hover:bg-[#f7efde]"
                               >
                                 编辑
                               </button>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  handleDeleteTimeSlot(index).catch(() => undefined);
-                                }}
-                                className="rounded-full border border-[#e1c9c4] bg-[#fff4f1] px-3 py-1.5 text-xs font-medium text-[#8b4038] transition hover:bg-[#ffe9e5]"
+                                className="btn-ghost px-2 py-1 text-[11px] text-rose-600"
+                                onClick={() => { handleDeleteTimeSlot(index).catch(() => undefined); }}
                               >
                                 删除
                               </button>
                             </div>
                           </div>
-                        </div>
-                      ))
+                        ))}
+                      </div>
                     )}
                   </div>
                 </div>
-              </div>
-            )}
-          </Surface>
+              )}
+            </Surface>
 
-          <Surface eyebrow="Credit Snapshot" title="实时学分概览">
-            <div className="space-y-3">
-              {creditStatus.map((item) => (
-                <div key={item.category} className="rounded-[1.2rem] border border-[#e8ddca] bg-white/90 px-4 py-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <div className="font-medium text-[#1b2822]">{getCategoryShortLabel(item.category)}</div>
-                      <div className="mt-1 text-xs text-[#6e786f]">
-                        {item.completed_credits.toFixed(1)} / {item.required_credits.toFixed(1)} 学分
-                      </div>
-                    </div>
-                    <Pill tone={item.is_completed ? 'success' : 'warning'}>
-                      {item.is_completed ? '已完成' : `剩余 ${item.remaining_credits.toFixed(1)}`}
-                    </Pill>
-                  </div>
+            {/* Credit snapshot */}
+            <Surface className="min-w-0">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h3 className="min-w-0 truncate text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>学分概览</h3>
+                <span className="tag tag-gray shrink-0">CREDITS</span>
+              </div>
+              {creditStatus.length === 0 ? (
+                <div className="py-4 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
+                  暂无学分要求。
                 </div>
-              ))}
-            </div>
-          </Surface>
+              ) : (
+                <div className="space-y-1.5">
+                  {creditStatus.map((item) => (
+                    <div
+                      key={item.category}
+                      className="flex min-w-0 items-center justify-between gap-2 rounded-lg border px-3 py-2"
+                      style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-card)' }}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
+                          {getCategoryShortLabel(item.category)}
+                        </p>
+                        <p className="mt-0.5 font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                          {item.completed_credits.toFixed(1)} / {item.required_credits.toFixed(1)}
+                        </p>
+                      </div>
+                      <Pill tone={item.is_completed ? 'success' : 'warning'}>
+                        {item.is_completed ? '完成' : `余 ${item.remaining_credits.toFixed(1)}`}
+                      </Pill>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Surface>
+          </div>
         </div>
-      </div>
+      )}
 
       <Modal
         open={timeSlotModalOpen}
-        onClose={() => {
-          setTimeSlotModalOpen(false);
-          setEditingTimeSlotIndex(null);
-        }}
+        onClose={() => { setTimeSlotModalOpen(false); setEditingTimeSlotIndex(null); }}
         title={editingTimeSlotIndex === null ? '新增课程时间段' : '编辑课程时间段'}
         description={selectedCourse ? `${selectedCourse.course.course_name} · 班次 ${selectedCourse.class_index}` : undefined}
         widthClassName="max-w-4xl"
@@ -803,10 +807,7 @@ export function CoursesPage() {
         <TimeSlotEditor
           initialValue={editingSlot}
           onSave={handleSaveTimeSlot}
-          onCancel={() => {
-            setTimeSlotModalOpen(false);
-            setEditingTimeSlotIndex(null);
-          }}
+          onCancel={() => { setTimeSlotModalOpen(false); setEditingTimeSlotIndex(null); }}
         />
       </Modal>
     </div>

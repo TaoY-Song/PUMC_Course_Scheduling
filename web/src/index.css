@@ -2,88 +2,222 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Design tokens ─────────────────────────────────────────────────────────
+   PUMC Scheduling — precision instrument palette
+   Inspired by laboratory equipment vernacular: teal-deep, ceramic-white,
+   ruled-paper grid lines, monospace instruments.
+────────────────────────────────────────────────────────────────────────────── */
 :root {
-  --background: 0 0% 100%;
-  --foreground: 222.2 84% 4.9%;
+  /* Surface */
+  --bg-base:   #f4f2ed;   /* warm near-white, like uncoated specimen paper */
+  --bg-card:   #ffffff;
+  --bg-sidebar: #071615;  /* deep sea-teal, the colour of autoclaved steel */
+
+  /* Text */
+  --text-primary:   #141e1c;
+  --text-secondary: #3a4d4a;
+  --text-muted:     #6b807c;
+  --text-on-dark:   #e8eeec;
+  --text-on-dark-muted: #8faaa6;
+
+  /* Accent */
+  --accent-ui:    #0d9488;   /* teal-600 — active states, links */
+  --accent-light: #ccfbf1;   /* teal-100 */
+  --accent-dark:  #0f766e;   /* teal-700 */
+
+  /* Border */
+  --border-base:  #d8d2c8;
+  --border-card:  #e4dfd6;
+  --border-subtle:#edeae4;
+  --border-dark:  rgba(255,255,255,0.10);
+
+  /* Tailwind CSS-var bridge */
+  --background: 40 13% 93%;
+  --foreground: 172 18% 10%;
   --card: 0 0% 100%;
-  --card-foreground: 222.2 84% 4.9%;
+  --card-foreground: 172 18% 10%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222.2 84% 4.9%;
-  --primary: 222.2 47.4% 11.2%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 210 40% 96.1%;
-  --secondary-foreground: 222.2 47.4% 11.2%;
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
-  --accent: 210 40% 96.1%;
-  --accent-foreground: 222.2 47.4% 11.2%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 222.2 84% 4.9%;
-  --radius: 0.5rem;
+  --popover-foreground: 172 18% 10%;
+  --primary: 174 76% 32%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 40 13% 88%;
+  --secondary-foreground: 172 18% 10%;
+  --muted: 40 10% 90%;
+  --muted-foreground: 170 9% 44%;
+  --accent: 174 76% 32%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 38 16% 82%;
+  --input: 38 16% 82%;
+  --ring: 174 76% 32%;
+  --radius: 0.625rem;
 }
 
-.dark {
-  --background: 222.2 84% 4.9%;
-  --foreground: 210 40% 98%;
-  --card: 222.2 84% 4.9%;
-  --card-foreground: 210 40% 98%;
-  --popover: 222.2 84% 4.9%;
-  --popover-foreground: 210 40% 98%;
-  --primary: 210 40% 98%;
-  --primary-foreground: 222.2 47.4% 11.2%;
-  --secondary: 217.2 32.6% 17.5%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 217.2 32.6% 17.5%;
-  --muted-foreground: 215 20.2% 65.1%;
-  --accent: 217.2 32.6% 17.5%;
-  --accent-foreground: 210 40% 98%;
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 217.2 32.6% 17.5%;
-  --input: 217.2 32.6% 17.5%;
-  --ring: 212.7 26.8% 83.9%;
-}
-
+/* ─── Base reset ──────────────────────────────────────────────────────────── */
 @layer base {
-  * {
-    @apply border-border;
+  *, *::before, *::after {
+    @apply border-border box-border;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
 
   body {
-    @apply bg-background text-foreground antialiased;
-    min-height: 100vh;
-    background:
-      radial-gradient(circle at top left, rgba(205, 169, 89, 0.16), transparent 28%),
-      radial-gradient(circle at top right, rgba(34, 84, 68, 0.14), transparent 24%),
-      linear-gradient(180deg, #f7f1e4 0%, #f2ead8 100%);
+    min-height: 100svh;
+    background-color: var(--bg-base);
+    color: var(--text-primary);
     font-family:
-      "Segoe UI",
-      "PingFang SC",
-      "Hiragino Sans GB",
-      "Microsoft YaHei",
-      sans-serif;
+      "Inter", "SF Pro Text", "PingFang SC", "Hiragino Sans GB",
+      "Microsoft YaHei UI", system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
   }
 
   #root {
-    min-height: 100vh;
+    min-height: 100svh;
+    display: flex;
+    flex-direction: column;
   }
 
-  button,
-  input,
-  select,
-  textarea {
+  /* focus ring — teal halo */
+  :focus-visible {
+    outline: 2px solid var(--accent-ui);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  button, input, select, textarea {
     font: inherit;
+  }
+
+  /* Scrollbar (webkit) */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-base);
+    border-radius: 99px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
   }
 }
 
-.ag-theme-alpine {
-  --ag-background-color: hsl(var(--background));
-  --ag-foreground-color: hsl(var(--foreground));
-  --ag-border-color: hsl(var(--border));
-  --ag-header-background-color: hsl(var(--muted));
-  --ag-odd-row-background-color: hsl(var(--muted) / 0.5);
-  --ag-row-hover-color: hsl(var(--accent));
+/* ─── Utility layer ───────────────────────────────────────────────────────── */
+@layer utilities {
+  /* Sidebar laboratory grid — signature texture */
+  .sidebar-grid {
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  /* Content area subtle ruled lines */
+  .content-ruled {
+    background-image:
+      linear-gradient(rgba(0,0,0,0.018) 1px, transparent 1px);
+    background-size: 100% 28px;
+    background-position: 0 12px;
+  }
+
+  /* Frosted glass card */
+  .glass-card {
+    background: rgba(255,255,255,0.82);
+    backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  }
+
+  /* Table — clean clinical lines */
+  .clinical-table th {
+    @apply text-[11px] font-semibold uppercase tracking-widest;
+    color: var(--text-muted);
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-card);
+    background: #f9f8f5;
+  }
+  .clinical-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .clinical-table tr:last-child td {
+    border-bottom: none;
+  }
+  .clinical-table tbody tr {
+    transition: background 120ms;
+  }
+  .clinical-table tbody tr:hover {
+    background: #f5f3ee;
+  }
+}
+
+/* ─── Component layer ─────────────────────────────────────────────────────── */
+@layer components {
+  /* Primary button */
+  .btn-primary {
+    @apply inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-all;
+    background: var(--accent-ui);
+    border: 1px solid var(--accent-dark);
+  }
+  .btn-primary:hover { background: var(--accent-dark); }
+  .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  /* Ghost button */
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-all;
+    border-color: var(--border-base);
+    color: var(--text-secondary);
+    background: transparent;
+  }
+  .btn-ghost:hover {
+    background: rgba(0,0,0,0.04);
+    border-color: var(--border-base);
+  }
+  .btn-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Danger ghost */
+  .btn-danger {
+    @apply inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-all;
+    border-color: #fca5a5;
+    color: #991b1b;
+    background: #fff5f5;
+  }
+  .btn-danger:hover { background: #fee2e2; }
+
+  /* Input */
+  .input-base {
+    @apply w-full rounded-lg border px-3 py-2 text-sm outline-none transition-all;
+    border-color: var(--border-base);
+    background: var(--bg-card);
+    color: var(--text-primary);
+  }
+  .input-base::placeholder { color: var(--text-muted); }
+  .input-base:focus {
+    border-color: var(--accent-ui);
+    box-shadow: 0 0 0 3px rgba(13,148,136,0.12);
+  }
+
+  /* Tag / Pill */
+  .tag {
+    @apply inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium;
+  }
+  .tag-teal  { background: #ccfbf1; color: #0f766e; border-color: #99f6e4; }
+  .tag-amber { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+  .tag-red   { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+  .tag-gray  { background: #f3f4f6; color: #374151; border-color: #d1d5db; }
+  .tag-blue  { background: #dbeafe; color: #1e40af; border-color: #bfdbfe; }
+
+  /* Status dot */
+  .dot-online  { @apply h-2 w-2 rounded-full bg-emerald-400; }
+  .dot-loading { @apply h-2 w-2 rounded-full bg-amber-400 animate-pulse; }
+  .dot-offline { @apply h-2 w-2 rounded-full bg-red-400; }
+
+  /* Metric card variants */
+  .metric-pine  { background: linear-gradient(135deg, #0a1f1e 0%, #134e48 100%); color: #ccfbf1; }
+  .metric-teal  { background: linear-gradient(135deg, #0d9488 0%, #14b8a6 100%); color: white; }
+  .metric-sand  { background: #f9f8f4; color: var(--text-primary); border: 1px solid var(--border-card); }
+  .metric-amber { background: linear-gradient(135deg, #78350f 0%, #b45309 100%); color: #fef3c7; }
 }

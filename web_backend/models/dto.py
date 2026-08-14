@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CreditConstraintMode(str, Enum):
@@ -58,8 +58,7 @@ class CourseDTO(BaseModel):
     time_slots: List[TimeSlotDTO] = Field(default_factory=list)
     class_index: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SelectedCourseDTO(BaseModel):
@@ -71,8 +70,7 @@ class SelectedCourseDTO(BaseModel):
     is_online: bool = False
     time_slots: List[TimeSlotDTO] = Field(default_factory=list)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SelectedCourseUpdateDTO(BaseModel):
@@ -87,7 +85,10 @@ class SchedulingConfigDTO(BaseModel):
     max_solutions: int = Field(default=1, ge=1, le=10)
     time_limit: int = Field(default=60, ge=10, le=300)
     credit_overflow_ratio: float = Field(default=0.1, ge=0.0, le=0.5)
-    campus_transition_time: int = Field(default=30, ge=0, le=120)
+    # 🔧 P0 修复：单位统一为“节次”，与核心 min_campus_transfer_time 一致。
+    # 之前此字段标注为分钟(0-120)却直接赋给以节次为单位的核心配置，
+    # 造成单位不匹配（填 30 分钟实际变成要求间隔 30 节，永远无法满足）。
+    campus_transition_time: int = Field(default=2, ge=0, le=10)
 
 
 class CreditRequirementDTO(BaseModel):
@@ -124,8 +125,7 @@ class ScheduleResultDTO(BaseModel):
     execution_time: float
     timestamp: datetime = Field(default_factory=datetime.now)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class LoadCoursesRequest(BaseModel):
@@ -166,6 +166,8 @@ class TaskResponseBase(BaseModel):
     is_active: bool = False
     is_finished: bool = False
     can_cancel: bool = False
+    # 🔧 P1 修复：补上进度字段。前端一直在读 percent，但 DTO 从未返回。
+    percent: int = 0
 
 
 class ExecuteSchedulingResponse(TaskResponseBase):
@@ -174,6 +176,7 @@ class ExecuteSchedulingResponse(TaskResponseBase):
 
 class SchedulingTaskStatusResponse(TaskResponseBase):
     has_result: bool = False
+    result: Optional[ScheduleResultDTO] = None
 
 
 class SchedulingTaskResultResponse(TaskResponseBase):

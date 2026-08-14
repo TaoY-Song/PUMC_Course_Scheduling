@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Clock3, Download, Loader2, Wifi, WifiOff } from 'lucide-react';
+import { ArrowRight, Download, Loader2, Wifi, WifiOff } from 'lucide-react';
 import { AcademicTimetable } from '../components/scheduling/AcademicTimetable';
 import { SchedulingActionBar } from '../components/scheduling/SchedulingActionBar';
 import { SchedulingConfigPanel } from '../components/scheduling/SchedulingConfigPanel';
@@ -9,7 +9,8 @@ import {
   type SchedulingLogEntry,
 } from '../components/scheduling/SchedulingProgressPanel';
 import { SchedulingResultPanel } from '../components/scheduling/SchedulingResultPanel';
-import { MetricCard, SectionTitle, Surface } from '../components/workbench/atoms';
+import { MetricCard } from '../components/workbench/atoms';
+import { isCategoryUnset } from '../lib/categories';
 import {
   cancelSchedulingTask,
   createSchedulingTask,
@@ -18,6 +19,7 @@ import {
   getSchedulingTaskResult,
   getSchedulingTaskStatus,
   getSelectedCourses,
+  normalizeScheduleResult,
   subscribeSchedulingStream,
   updateSchedulingConfig,
 } from '../lib/workbenchApi';
@@ -38,7 +40,8 @@ const DEFAULT_CONFIG: SchedulingConfig = {
   max_solutions: 1,
   time_limit: 60,
   credit_overflow_ratio: 0.1,
-  campus_transition_time: 30,
+  // 单位：节次（与后端 min_campus_transfer_time 一致）
+  campus_transition_time: 2,
 };
 
 function sameConfig(left: SchedulingConfig, right: SchedulingConfig) {
@@ -221,13 +224,16 @@ export function SchedulingPage() {
 
   const syncTaskStatus = useCallback(
     async (id: string) => {
-      if (pollingBusyRef.current) {
+      if (id !== activeTaskIdRef.current || pollingBusyRef.current) {
         return;
       }
       pollingBusyRef.current = true;
 
       try {
         const statusResponse = await getSchedulingTaskStatus(id);
+        if (id !== activeTaskIdRef.current) {
+          return;
+        }
         const nextStatus = normalizeTaskStatus(
           typeof statusResponse.status === 'string' ? statusResponse.status : undefined,
         );
@@ -256,6 +262,9 @@ export function SchedulingPage() {
           pushLog('success', '轮询返回结果', '状态接口已直接返回最终排课结果。');
         } else if (isTerminalStatus(nextStatus)) {
           const resultResponse = await getSchedulingTaskResult(id);
+          if (id !== activeTaskIdRef.current) {
+            return;
+          }
           if (resultResponse.result) {
             setResult(resultResponse.result);
             pushLog('success', '结果已补齐', '任务结束后通过结果接口拉回最终数据。');
@@ -375,6 +384,14 @@ export function SchedulingPage() {
       onMessage: (message: SchedulingWebSocketMessage) => {
         const currentTaskId = activeTaskIdRef.current;
         const payload = message.data as Record<string, unknown>;
+        const eventTaskId = typeof payload.task_id === 'string' ? payload.task_id : null;
+
+        // 所有任务事件都必须可归属；旧任务和无 task_id 的消息不能污染当前界面。
+        if (message.type.startsWith('scheduling.')) {
+          if (!currentTaskId || !eventTaskId || eventTaskId !== currentTaskId) {
+            return;
+          }
+        }
 
         if (message.type === 'scheduling.started') {
           const started = payload as SchedulingStartedPayload;
@@ -413,7 +430,10 @@ export function SchedulingPage() {
             source: 'ws',
           });
           if (completed.result) {
-            setResult(completed.result);
+            const normalizedResult = normalizeScheduleResult(completed.result);
+            if (normalizedResult) {
+              setResult(normalizedResult);
+            }
           }
           pushLog('success', '任务完成', (completed.message as string) || '排课已完成。');
           stopPolling();
@@ -489,6 +509,7 @@ export function SchedulingPage() {
 
       resetLogs();
       setResult(null);
+      activeTaskIdRef.current = null;
       pushLog('info', '开始执行', '任务准备中，正在提交排课请求。');
 
       const handle: SchedulingTaskHandle = await createSchedulingTask({
@@ -597,36 +618,63 @@ export function SchedulingPage() {
     }
   }, [pushLog]);
 
-  return (
-    <div className="space-y-6">
-      <SectionTitle
-        eyebrow="Phase 2"
-        title="智能排课与周课表视图"
-        description="这页已经从占位实现升级成可用工作台：配置、任务流、轮询、WebSocket 进度和 AcademicTimetable 已全部接通。"
-        action={
-          <Link
-            to="/courses"
-            className="inline-flex items-center gap-2 rounded-full border border-[#d7ccb8] bg-white px-4 py-2 text-sm font-medium text-[#223129] transition hover:bg-[#f7efdf]"
-          >
-            返回课程管理
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        }
-      />
+  // 类别仍为 nan 的课程不计入任何学分要求，排课引擎会静默丢弃它们。
+  // 在启动前拦下来，而不是让用户排完才发现结果里少了课。
+  const unsetCategoryCourses = selectedCourses.filter((course) =>
+    isCategoryUnset(course.custom_category),
+  );
+  const hasUnsetCategory = unsetCategoryCourses.length > 0;
 
-      <div className="grid gap-4 md:grid-cols-3">
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em]"
+             style={{ color: 'var(--text-muted)' }}>Scheduling Engine</p>
+          <h2 className="mt-0.5 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>智能排课</h2>
+        </div>
+        <Link
+          to="/courses"
+          className="btn-ghost"
+        >
+          <ArrowRight className="h-3.5 w-3.5 rotate-180" />
+          返回课程
+        </Link>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
         <MetricCard label="任务状态" value={statusLabel(taskRuntime.status)} hint={taskRuntime.message} tone="pine" />
-        <MetricCard label="已选课程" value={String(selectedCourses.length)} hint="作为排课输入的数据源" tone="amber" />
+        <MetricCard label="已选课程" value={String(selectedCourses.length)} hint="排课输入源" tone="teal" />
         <MetricCard
           label="连接状态"
           value={connectionLabel(connectionState)}
-          hint={connectionState === 'connected' ? '实时推送可用' : '轮询通道自动兜底'}
+          hint={connectionState === 'connected' ? '实时推送可用' : '轮询兜底中'}
           tone="sand"
         />
       </div>
 
-      <div className="grid gap-6 2xl:grid-cols-[1.08fr_0.92fr]">
-        <div className="space-y-6">
+      {hasUnsetCategory && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border px-4 py-3 text-sm"
+          style={{ borderColor: '#fca5a5', background: '#fff5f5', color: '#991b1b' }}
+        >
+          <span className="font-medium">
+            {unsetCategoryCourses.length} 门课程未设置类别，无法开始排课
+          </span>
+          <span className="font-mono text-[11px] opacity-80">
+            {unsetCategoryCourses.map((course) => course.course.course_code).join('、')}
+          </span>
+          <Link to="/courses" className="btn-ghost ml-auto">
+            去设置类别
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      )}
+
+      <div className="grid gap-4 2xl:grid-cols-[1.08fr_0.92fr]">
+        <div className="space-y-4">
           <SchedulingConfigPanel
             value={draftConfig}
             isDirty={isDirty}
@@ -643,6 +691,11 @@ export function SchedulingPage() {
             connectionState={connectionState}
             isExecuting={isExecuting || isBooting}
             isCancelling={isCancelling}
+            blockedReason={
+              hasUnsetCategory
+                ? `${unsetCategoryCourses.length} 门课程未设置类别，请先在课程工作台完成设置`
+                : null
+            }
             onExecute={executeScheduling}
             onCancel={cancelScheduling}
             onRefresh={refreshStatus}
@@ -657,7 +710,7 @@ export function SchedulingPage() {
           />
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-4">
           <SchedulingResultPanel
             result={result}
             courses={resultCourses}
@@ -668,50 +721,41 @@ export function SchedulingPage() {
                   void exportScheduleResult();
                 }}
                 disabled={!result || isExporting}
-                className="inline-flex items-center gap-2 rounded-full border border-[#d7ccb8] bg-white px-4 py-2 text-sm font-medium text-[#223129] transition hover:bg-[#f7efdf] disabled:cursor-not-allowed disabled:opacity-45"
+                className="btn-ghost"
               >
                 {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                导出结果 Excel
+                导出 Excel
               </button>
             }
           />
-          <Surface eyebrow="状态" title="联调提示">
-            <div className="space-y-3 text-sm leading-6 text-[#5a645b]">
-              <div className="flex items-center gap-2">
-                {connectionState === 'connected' ? (
-                  <Wifi className="h-4 w-4 text-[#2f7b4f]" />
-                ) : (
-                  <WifiOff className="h-4 w-4 text-[#9a6b34]" />
-                )}
-                <span>
-                  {connectionState === 'connected'
-                    ? 'WebSocket 已连接，优先接收实时进度。'
-                    : 'WebSocket 当前不可用，但轮询会继续兜底。'}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Clock3 className="h-4 w-4 text-[#8a6c2e]" />
-                <span>如果后端本轮仍返回同步结果，页面会自动收口为完成态，不会把流程卡在半路。</span>
-              </div>
+          <div className="rounded-lg border px-4 py-3 text-xs leading-5"
+               style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}>
+            <div className="flex items-center gap-2">
+              {connectionState === 'connected'
+                ? <Wifi className="h-3.5 w-3.5 text-emerald-500" />
+                : <WifiOff className="h-3.5 w-3.5 text-rose-400" />}
+              {connectionState === 'connected' ? 'WS 实时推送已就绪。' : 'WS 不可用，HTTP 轮询兜底中。'}
             </div>
-          </Surface>
+          </div>
         </div>
       </div>
 
       <AcademicTimetable
         courses={resultCourses}
-        title="排课结果周课表"
-        description="这里只渲染最终排课结果。导出的 Excel 只保留逐条课程明细，不再附带课表工作表。"
+        title="周课表"
+        description="排课结果可视化。导出 Excel 只含课程明细，不含本表。"
       />
 
       {error ? (
-        <div className="rounded-[1.2rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <div role="alert" className="flex items-start gap-2 rounded-lg border px-4 py-3 text-sm"
+             style={{ borderColor: '#fca5a5', background: '#fff5f5', color: '#991b1b' }}>
           {error}
         </div>
       ) : null}
 
       {notice ? (
-        <div className="rounded-[1.2rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+        <div role="status" aria-live="polite" className="flex items-start gap-2 rounded-lg border px-4 py-3 text-sm"
+             style={{ borderColor: '#99f6e4', background: '#f0fdfb', color: '#0f766e' }}>
           {notice}
         </div>
       ) : null}

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Dict, Optional, Tuple
@@ -163,6 +164,17 @@ class CourseSupplementService:
                 self._log_and_print(f"日志文件: {self.log_file_path}")
 
             self.tester.run()
+
+            # tester 在“没有缺失课程”时会提前返回且不写输出文件。
+            # Web API 已经承诺运行后可下载补充结果，因此无论有没有新增，
+            # 都必须产出一个有效结果文件。无缺失时原结果就是最终结果，
+            # 直接复制，避免页面只出现日志下载入口。
+            output_path = Path(self.tester.output_file)
+            if not output_path.exists():
+                source_path = Path(schedule_result_file)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source_path, output_path)
+                self._log_and_print("未发现缺失课程，已将原排课结果作为补充结果输出")
 
             result = {
                 "success": True,

@@ -1,0 +1,8 @@
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q --strict-markers"
+markers = [
+    "slow: tests that run the solver to exhaustion (deselect with '-m \"not slow\"')",
+]

@@ -4,10 +4,12 @@
 负责从Excel文件加载课程数据，进行验证、清洗和转换
 """
 
+import re
+
 import pandas as pd
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from .models import Course
+from .models import Course, TimeSlot
 
 
 class CourseDataLoader:
@@ -145,16 +147,11 @@ class CourseDataLoader:
         return df
 
     def _create_course_from_row(self, row) -> Optional[Course]:
-        """从数据行创建Course对象"""
+        """从数据行创建 Course，并尽可能保留课程表中的时间信息。"""
         try:
-            # 处理线上状态信息
-            is_online_str = str(row.get("是否线上", "否")).strip()
-            is_online = is_online_str == "是"
-
-            # 处理自定义类别信息
+            is_online = str(row.get("是否线上", "否")).strip() == "是"
             custom_category = str(row.get("自定义类别", "")).strip()
-
-            return Course(
+            course = Course(
                 code=str(row["课程编码"]).strip(),
                 name=str(row["课程名称"]).strip(),
                 department=str(row["开课院系"]).strip(),
@@ -168,9 +165,97 @@ class CourseDataLoader:
                 is_online=is_online,
                 custom_category=custom_category,
             )
+            # Course 是课程目录元数据，时间属于具体班次。目录阶段暂存该
+            # 字段，state.add_selected_course 会复制到 SelectedCourse。
+            course.time_slots = [] if is_online else self._parse_time_slots(row)
+            return course
         except Exception as e:
             print(f"创建课程对象失败: {e}")
             return None
+
+    def _parse_time_slots(self, row) -> List[TimeSlot]:
+        """解析常见星期/节次/周次列，支持一门课同周两次授课。"""
+        slots: List[TimeSlot] = []
+        for suffix in ("", "2", "二"):
+            day_value = self._first_value(
+                row,
+                *(f"{column}{suffix}" for column in ("星期", "周几", "上课星期", "day_of_week", "weekday")),
+            )
+            start_value = self._first_value(
+                row,
+                *(f"{column}{suffix}" for column in ("开始节次", "起始节次", "start_period", "start_section")),
+            )
+            end_value = self._first_value(
+                row,
+                *(f"{column}{suffix}" for column in ("结束节次", "终止节次", "end_period", "end_section")),
+            )
+            if all(self._is_empty(value) for value in (day_value, start_value, end_value)):
+                continue
+            if any(self._is_empty(value) for value in (day_value, start_value, end_value)):
+                continue
+
+            try:
+                weeks_value = self._first_value(
+                    row,
+                    *(f"{column}{suffix}" for column in ("周次", "教学周", "weeks")),
+                )
+                slots.append(
+                    TimeSlot(
+                        weekday=self._parse_weekday(day_value),
+                        start_section=int(float(start_value)),
+                        end_section=int(float(end_value)),
+                        weeks=self._parse_weeks(weeks_value) or list(range(1, 21)),
+                    )
+                )
+            except (TypeError, ValueError):
+                continue
+        return slots
+
+    @staticmethod
+    def _first_value(row, *columns: str):
+        for column in columns:
+            if column in row and not CourseDataLoader._is_empty(row[column]):
+                return row[column]
+        return None
+
+    @staticmethod
+    def _is_empty(value: Any) -> bool:
+        return value is None or pd.isna(value) or str(value).strip() == ""
+
+    @staticmethod
+    def _parse_weekday(value: Any) -> int:
+        text = str(value).strip().lower()
+        aliases = {
+            "周一": 1, "星期一": 1, "monday": 1,
+            "周二": 2, "星期二": 2, "tuesday": 2,
+            "周三": 3, "星期三": 3, "wednesday": 3,
+            "周四": 4, "星期四": 4, "thursday": 4,
+            "周五": 5, "星期五": 5, "friday": 5,
+            "周六": 6, "星期六": 6, "saturday": 6,
+            "周日": 7, "周天": 7, "星期日": 7, "sunday": 7,
+        }
+        if text in aliases:
+            return aliases[text]
+        weekday = int(float(value))
+        if weekday not in range(1, 8):
+            raise ValueError("星期必须在 1 到 7 之间")
+        return weekday
+
+    @staticmethod
+    def _parse_weeks(value: Any) -> List[int]:
+        if CourseDataLoader._is_empty(value):
+            return []
+        weeks = set()
+        for part in re.split(r"[,，、;；\s]+", str(value).strip()):
+            if not part:
+                continue
+            match = re.fullmatch(r"(\d+)\s*[-~—–至]\s*(\d+)", part)
+            if match:
+                start, end = map(int, match.groups())
+                weeks.update(range(min(start, end), max(start, end) + 1))
+            elif part.isdigit():
+                weeks.add(int(part))
+        return sorted(week for week in weeks if week > 0)
 
     def _generate_load_report(self, total_records: int, failed_count: int):
         """生成加载报告"""

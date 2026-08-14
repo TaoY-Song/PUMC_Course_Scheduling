@@ -21,19 +21,16 @@ class EventManager(IEventManager):
         self._logger = logging.getLogger(__name__)
 
     def emit(self, event: ServiceEvent) -> None:
-        """发送事件"""
+        """发送事件；复制订阅列表后再调用，允许处理器安全地重入。"""
         with self._lock:
-            handlers = self._handlers.get(event.event_type, [])
+            handlers = list(self._handlers.get(event.event_type, []))
 
-            # 记录事件
-            self._logger.debug(f"发送事件: {event.event_type} from {event.source}")
-
-            # 通知所有订阅者
-            for handler in handlers:
-                try:
-                    handler(event)
-                except Exception as e:
-                    self._logger.error(f"事件处理器执行失败: {e}")
+        self._logger.debug(f"发送事件: {event.event_type} from {event.source}")
+        for handler in handlers:
+            try:
+                handler(event)
+            except Exception as e:
+                self._logger.error(f"事件处理器执行失败: {e}")
 
     def subscribe(
         self, event_type: str, handler: Callable[[ServiceEvent], None]

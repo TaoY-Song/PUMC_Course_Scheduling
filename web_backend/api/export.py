@@ -23,6 +23,7 @@ from ..api.courses import _selected_course_to_dto
 from ..dependencies import get_data_service, get_web_session
 from ..models.dto import ApiResponse
 from ..state import WebSessionContext
+from ..uploads import read_upload_bytes
 
 router = APIRouter(tags=["export"])
 
@@ -217,9 +218,11 @@ async def import_selected_courses(
 ):
     """Import selected courses from Excel."""
     try:
-        suffix = Path(file.filename or "selected_courses.xlsx").suffix or ".xlsx"
+        suffix = Path(file.filename or "selected_courses.xlsx").suffix.lower() or ".xlsx"
+        if suffix not in {".xls", ".xlsx"}:
+            raise HTTPException(status_code=400, detail="已选课程文件必须是 Excel 文件")
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            content = await file.read()
+            content = await read_upload_bytes(file)
             tmp.write(content)
             tmp_path = tmp.name
 
@@ -228,14 +231,12 @@ async def import_selected_courses(
                 tmp_path,
                 session.loaded_courses,
             )
+            if not courses:
+                raise ValueError("没有导入任何已选课程，请检查文件格式及课程编码、班次是否匹配")
 
-            session.clear_selected_courses()
             response_courses = []
-            for course in courses:
-                if not hasattr(course, "is_category_locked"):
-                    course.is_category_locked = False
-                selected_id = str(uuid4())
-                session.selected_courses[selected_id] = course
+            session.replace_selected_courses(courses)
+            for selected_id, course in session.selected_courses.items():
                 response_courses.append(_selected_course_to_dto(course, selected_id))
 
             return ApiResponse(
@@ -246,6 +247,8 @@ async def import_selected_courses(
         finally:
             os.unlink(tmp_path)
 
+    except HTTPException:
+        raise
     except Exception as error:
         return ApiResponse(success=False, message=str(error))
 
@@ -255,8 +258,22 @@ async def download_file(
     file_name: str,
     session: WebSessionContext = Depends(get_web_session),
 ):
-    """Download a previously generated artifact."""
-    file_path = session.artifacts_dir / file_name
+    """Download a previously generated artifact.
+
+    `file_name` 是 URL 输入，不能直接与 artifacts_dir 拼接。在 Windows
+    下反斜杠也是路径分隔符：`..%5Csecret` 之前可逃逸到 exports 外部。
+    这里只接受纯文件名，并用 resolve()/relative_to() 做第二层防线。
+    """
+    if Path(file_name).name != file_name or "/" in file_name or "\\" in file_name:
+        raise HTTPException(status_code=400, detail="文件名无效")
+
+    artifacts_dir = session.artifacts_dir.resolve()
+    file_path = (artifacts_dir / file_name).resolve()
+    try:
+        file_path.relative_to(artifacts_dir)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="文件名无效") from error
+
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="文件未找到")
 

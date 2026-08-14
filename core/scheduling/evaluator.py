@@ -12,6 +12,10 @@ from ..models import SelectedCourse
 from .config import SchedulingConfig
 from .models import ScheduleScore, ScheduleResult
 
+from ..logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 class ScheduleEvaluator:
     """排课方案评估器"""
@@ -62,14 +66,30 @@ class ScheduleEvaluator:
 
         # 🔧 修正：最终分数计算 - 学分匹配度权重更高
         # 学分匹配度占70%，时间质量占30%
-        score.total_score = max(
-            0,
-            credit_match_score * 0.7
-            + time_quality_score * 0.3
-            - overflow_penalty
-            - gap_penalty,
+        # 🔧 P1 修复：限幅到 0-100，与字段声明的“总分（0-100）”一致。
+        score.total_score = min(
+            100.0,
+            max(
+                0.0,
+                credit_match_score * 0.7
+                + time_quality_score * 0.3
+                - overflow_penalty
+                - gap_penalty,
+            ),
         )
         score.credit_efficiency_score = credit_match_score
+
+        # 🔧 P1 修复：以前只赋值 total_score 和 credit_efficiency_score，
+        # time_preference_score / campus_consistency_score /
+        # course_distribution_score 三个字段永远保持 0.0，
+        # 导致 Web DTO 里的 time_quality_score 恒为 0。
+        score.time_preference_score = time_quality_score
+        score.campus_consistency_score = self._calculate_campus_consistency_score(
+            selected_courses
+        )
+        score.course_distribution_score = self._calculate_course_distribution_score(
+            selected_courses
+        )
 
         return score
 
@@ -120,7 +140,7 @@ class ScheduleEvaluator:
                 total_match_score += match_score
                 total_categories += 1
 
-                print(
+                logger.debug(
                     f"   📊 学分匹配评分 {category}: {actual_credits:.1f}/{required_credits:.1f} = {match_score:.1f}分"
                 )
 
@@ -128,7 +148,7 @@ class ScheduleEvaluator:
         average_score = (
             total_match_score / total_categories if total_categories > 0 else 0.0
         )
-        print(f"   🎯 总体学分匹配评分: {average_score:.1f}分")
+        logger.debug(f"   🎯 总体学分匹配评分: {average_score:.1f}分")
         return average_score
 
     def _calculate_time_efficiency_score(
@@ -234,7 +254,10 @@ class ScheduleEvaluator:
         total_overflow = 0.0
 
         for category, requirement in credit_manager.requirements.items():
-            actual_credits = category_credits.get(category, 0.0)
+            actual_credits = (
+                category_credits.get(category, 0.0)
+                + requirement.completed_credits
+            )
             required_credits = requirement.required_credits
 
             if actual_credits > required_credits:
@@ -261,7 +284,10 @@ class ScheduleEvaluator:
         total_gap_penalty = 0.0
 
         for category, requirement in credit_manager.requirements.items():
-            actual_credits = category_credits.get(category, 0.0)
+            actual_credits = (
+                category_credits.get(category, 0.0)
+                + requirement.completed_credits
+            )
             required_credits = requirement.required_credits
 
             if actual_credits < required_credits:
@@ -276,13 +302,19 @@ class ScheduleEvaluator:
     def _calculate_time_quality_score(
         self, selected_courses: List[SelectedCourse]
     ) -> float:
-        """计算时间质量评分（修正版）
+        """计算时间质量评分
 
         评分逻辑：
         1. 基础分：100分（满足硬约束的前提下）
-        2. 早课惩罚：有早课（1-2节开始）的课程每门扣分
-        3. 晚课惩罚：有晚课（9-10节结束）的课程每门扣分
-        4. 课程分布奖励：课程分布越均匀得分越高
+        2. 时段偏好惩罚：依据 config 的时间偏好设置扣分
+        3. 课程分布奖励：课程分布越均匀得分越高
+
+        🔧 P1 修复：
+        - 之前本方法用硬编码阈值判早/晚课，完全忽略
+          config.get_time_preference_score()，导致 avoid_early_morning /
+          avoid_late_evening / lunch_break_protection 三个配置改了也不生效。
+        - 且分布奖励可以把分数推到 100 以上（实测 108），
+          与“0-100 分”的字段语义矛盾。现在限幅到 100。
         """
         if not selected_courses:
             return 0.0
@@ -295,45 +327,29 @@ class ScheduleEvaluator:
 
         # 分析每门课程的时间特征
         for selected_course in selected_courses:
-            has_early_class = False  # 是否有早课
-            has_late_class = False  # 是否有晚课
+            worst_preference = 1.0  # 1.0 表示最佳时段
 
             for time_slot in selected_course.time_slots:
-                weekday = time_slot.weekday
-                start_section = time_slot.start_section
-                end_section = time_slot.end_section
+                daily_courses[time_slot.weekday].append(selected_course)
 
-                # 记录每天的课程
-                daily_courses[weekday].append(selected_course)
+                # 使用配置的时间偏好评分（受 avoid_early_morning 等开关影响）
+                preference = self.config.get_time_preference_score(
+                    time_slot.start_section
+                )
+                worst_preference = min(worst_preference, preference)
 
-                # 判断是否为早课（1-2节开始）
-                if start_section <= 2:
-                    has_early_class = True
-
-                # 判断是否为晚课（9-10节结束）
-                if end_section >= 9:
-                    has_late_class = True
-
-            # 按课程扣分，而不是按时间段扣分
-            if has_early_class:
-                if any(ts.start_section == 1 for ts in selected_course.time_slots):
-                    penalty += 5.0  # 第1节开始的课程扣5分
-                elif any(ts.start_section == 2 for ts in selected_course.time_slots):
-                    penalty += 3.0  # 第2节开始的课程扣3分
-
-            if has_late_class:
-                if any(ts.end_section == 10 for ts in selected_course.time_slots):
-                    penalty += 5.0  # 第10节结束的课程扣5分
-                elif any(ts.end_section == 9 for ts in selected_course.time_slots):
-                    penalty += 3.0  # 第9节结束的课程扣3分
+            # 偏好度越低，扣分越多（每门课最多扣 10 分）
+            penalty += (1.0 - worst_preference) * 10.0
 
         # 课程分布奖励
         distribution_bonus = self._calculate_distribution_bonus(daily_courses)
 
-        # 计算最终得分
-        final_score = base_score - penalty + distribution_bonus
+        # 计算最终得分，限幅在 0-100
+        # 先把基础分+奖励限幅到 100，再扣惩罚：
+        # 否则奖励会先吸收惩罚，使 avoid_* 类配置在高分区间看不出区别。
+        final_score = min(100.0, base_score + distribution_bonus) - penalty
 
-        return max(0.0, final_score)
+        return max(0.0, min(100.0, final_score))
 
     def _calculate_distribution_bonus(self, daily_courses: Dict[int, List]) -> float:
         """计算课程分布奖励

@@ -15,124 +15,140 @@ function score(value: number): string {
 
 export function SchedulingResultPanel({ result, courses, action }: SchedulingResultPanelProps) {
   const selectedCourses = result?.selected_courses?.length ? result.selected_courses : courses;
-  const totalCredits = selectedCourses.reduce((sum, course) => sum + (course.course.credits || 0), 0);
+  const totalCredits = selectedCourses.reduce((sum, c) => sum + (c.course.credits || 0), 0);
   const conflictCount = result?.conflicts?.length ?? 0;
 
   return (
-    <Surface eyebrow="结果" title="排课摘要与明细" action={action}>
-      <div className="space-y-5">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <MetricCard label="课程数" value={String(selectedCourses.length)} hint="当前纳入排课的课程数量" tone="pine" />
-          <MetricCard label="总学分" value={score(totalCredits)} hint="按当前结果汇总" tone="amber" />
-          <MetricCard label="总评分" value={score(result?.score.total_score ?? 0)} hint="综合评价分" tone="sand" />
-          <MetricCard label="冲突数" value={String(conflictCount)} hint="结果返回的冲突信息" tone="ink" />
-        </div>
+    <Surface>
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>排课摘要</h3>
+        {action}
+      </div>
 
-        {result ? (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            <div className="rounded-[1rem] border border-[#e1d6c2] bg-[#fbf7ef] p-4">
-              <div className="text-[0.72rem] uppercase tracking-[0.28em] text-[#7b6b55]">学分匹配</div>
-              <div className="mt-2 text-2xl font-semibold text-[#213028]">{score(result.score.credit_match_score)}</div>
-              <div className="mt-3 h-2 rounded-full bg-[#e6dccb]">
-                <div
-                  className="h-2 rounded-full bg-emerald-500"
-                  style={{ width: `${Math.max(0, Math.min(100, result.score.credit_match_score))}%` }}
-                />
-              </div>
-            </div>
-            <div className="rounded-[1rem] border border-[#e1d6c2] bg-[#fbf7ef] p-4">
-              <div className="text-[0.72rem] uppercase tracking-[0.28em] text-[#7b6b55]">时间质量</div>
-              <div className="mt-2 text-2xl font-semibold text-[#213028]">{score(result.score.time_quality_score)}</div>
-              <div className="mt-3 h-2 rounded-full bg-[#e6dccb]">
-                <div
-                  className="h-2 rounded-full bg-[#7d6a4c]"
-                  style={{ width: `${Math.max(0, Math.min(100, result.score.time_quality_score))}%` }}
-                />
-              </div>
-            </div>
-            <div className="rounded-[1rem] border border-[#e1d6c2] bg-[#fbf7ef] p-4">
-              <div className="text-[0.72rem] uppercase tracking-[0.28em] text-[#7b6b55]">执行时间</div>
-              <div className="mt-2 text-2xl font-semibold text-[#213028]">{result.execution_time.toFixed(2)}s</div>
-              <div className="mt-2 text-sm text-[#6d756d]">{result.timestamp}</div>
-            </div>
-          </div>
-        ) : (
-          <div className="rounded-[1rem] border border-dashed border-[#d8ccb8] bg-[#fbf7ef] px-4 py-6 text-sm text-[#6b756d]">
-            还没有排课结果。先保存配置并执行一次任务。
-          </div>
-        )}
+      {/* Metrics */}
+      <div className="mb-4 grid grid-cols-2 gap-2 xl:grid-cols-4">
+        <MetricCard label="课程数"  value={String(selectedCourses.length)} hint="纳入排课" tone="pine"  />
+        <MetricCard label="总学分"  value={score(totalCredits)}            hint="汇总"     tone="teal"  />
+        <MetricCard label="综合评分" value={score(result?.score.total_score ?? 0)} hint="满分100" tone="sand"  />
+        <MetricCard label="冲突数"  value={String(conflictCount)}          hint="需人工核查" tone="ink"  />
+      </div>
 
-        {result?.conflicts?.length ? (
-          <div className="rounded-[1rem] border border-[#e1d6c2] bg-[#fbf7ef] p-4">
-            <div className="mb-3 text-sm font-medium text-[#24312c]">冲突信息</div>
-            <div className="space-y-2">
-              {result.conflicts.map((conflict, index) => (
-                <div
-                  key={`${conflict.course1_code}-${conflict.course2_code}-${index}`}
-                  className="rounded-[0.9rem] border border-amber-200 bg-amber-50 px-4 py-3"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Pill tone="warning">{conflict.conflict_type}</Pill>
-                    <span className="text-sm font-medium text-[#3f3524]">
-                      {conflict.course1_code} / {conflict.course2_code}
-                    </span>
+      {/* Score breakdown */}
+      {result ? (
+        <div className="mb-4 grid grid-cols-3 gap-2">
+          {([
+            { label: '学分匹配', value: result.score.credit_match_score,  color: 'var(--accent-ui)' },
+            { label: '时间质量', value: result.score.time_quality_score,   color: '#14b8a6' },
+            { label: '执行 (s)', value: null, text: `${result.execution_time.toFixed(2)}s`, color: '#94a3b8' },
+          ] as const).map((item) => (
+            <div key={item.label} className="rounded-lg border px-3 py-3"
+                 style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-card)' }}>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em]"
+                 style={{ color: 'var(--text-muted)' }}>
+                {item.label}
+              </p>
+              {'value' in item && item.value !== null ? (
+                <>
+                  <p className="mt-1 text-lg font-semibold tabular-nums"
+                     style={{ color: 'var(--text-primary)' }}>
+                    {score(item.value)}
+                  </p>
+                  <div className="mt-1.5 h-1 overflow-hidden rounded-full"
+                       style={{ background: 'var(--border-card)' }}>
+                    <div className="h-full rounded-full"
+                         style={{ width: `${Math.max(0, Math.min(100, item.value))}%`, background: item.color }} />
                   </div>
-                  <div className="mt-2 text-sm leading-6 text-[#6f5d39]">{conflict.description}</div>
-                </div>
-              ))}
+                </>
+              ) : (
+                <p className="mt-1 text-lg font-semibold tabular-nums"
+                   style={{ color: 'var(--text-primary)' }}>
+                  {item.text}
+                </p>
+              )}
             </div>
-          </div>
-        ) : null}
+          ))}
+        </div>
+      ) : (
+        <div className="mb-4 rounded-lg border border-dashed py-6 text-center text-xs"
+             style={{ borderColor: 'var(--border-base)', color: 'var(--text-muted)' }}>
+          还没有排课结果。保存配置后执行一次任务。
+        </div>
+      )}
 
-        <div className="rounded-[1rem] border border-[#e1d6c2] bg-white">
-          <div className="border-b border-[#eadfcb] px-4 py-3 text-sm font-medium text-[#24312c]">课程明细</div>
-          <div className="max-h-[28rem] overflow-auto">
-            <table className="min-w-full divide-y divide-[#eee4d0]">
-              <thead className="sticky top-0 z-10 bg-[#fbf7ef]">
-                <tr className="text-left text-xs font-semibold uppercase tracking-[0.24em] text-[#7b6b55]">
-                  <th className="px-4 py-3">课程</th>
-                  <th className="px-4 py-3">教师</th>
-                  <th className="px-4 py-3">学分</th>
-                  <th className="px-4 py-3">类别</th>
-                  <th className="px-4 py-3">校区</th>
-                  <th className="px-4 py-3">时间安排</th>
+      {/* Conflicts */}
+      {!!result?.conflicts?.length && (
+        <div className="mb-4 space-y-1.5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em]"
+             style={{ color: 'var(--text-muted)' }}>冲突信息</p>
+          {result.conflicts.map((c, i) => (
+            <div key={`${c.course1_code}-${c.course2_code}-${i}`}
+                 className="flex items-start gap-2 rounded-lg border px-3 py-2.5"
+                 style={{ borderColor: '#fde68a', background: '#fffbeb' }}>
+              <Pill tone="warning">{c.conflict_type}</Pill>
+              <div>
+                <p className="text-xs font-medium" style={{ color: '#92400e' }}>
+                  {c.course1_code} / {c.course2_code}
+                </p>
+                <p className="mt-0.5 text-xs" style={{ color: '#b45309' }}>{c.description}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Course table */}
+      <div className="overflow-hidden rounded-lg border" style={{ borderColor: 'var(--border-card)' }}>
+        <div className="border-b px-4 py-2.5"
+             style={{ borderColor: 'var(--border-card)', background: '#f8f7f4' }}>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em]"
+             style={{ color: 'var(--text-muted)' }}>
+            课程明细 — {selectedCourses.length} 门
+          </p>
+        </div>
+        <div className="max-h-80 overflow-auto">
+          <table className="clinical-table min-w-full">
+            <thead>
+              <tr>
+                <th className="text-left">课程</th>
+                <th className="text-left">教师</th>
+                <th className="text-left">学分</th>
+                <th className="text-left">类别</th>
+                <th className="text-left">时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              {selectedCourses.length === 0 ? (
+                <tr>
+                  <td className="px-4 py-5 text-xs" style={{ color: 'var(--text-muted)' }} colSpan={5}>
+                    暂无课程数据。
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-[#f1e8d7] bg-white">
-                {selectedCourses.length === 0 ? (
-                  <tr>
-                    <td className="px-4 py-6 text-sm text-[#6d756d]" colSpan={6}>
-                      当前没有课程。
-                    </td>
-                  </tr>
-                ) : (
-                  selectedCourses.map((course) => (
-                    <tr key={course.id} className="align-top">
-                      <td className="px-4 py-4">
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-2">
-                            <Pill tone="neutral">{course.course.course_code}</Pill>
-                            {course.is_online || course.course.is_online ? <Pill tone="info">线上</Pill> : null}
-                          </div>
-                          <div className="font-medium text-[#24312c]">{course.course.course_name}</div>
-                          <div className="text-xs text-[#768077]">{course.course.department}</div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-4 text-sm text-[#445047]">{course.course.teacher || '-'}</td>
-                      <td className="px-4 py-4 text-sm text-[#445047]">{course.course.credits.toFixed(1)}</td>
-                      <td className="px-4 py-4 text-sm text-[#445047]">
-                        {course.custom_category || course.course.category}
-                      </td>
-                      <td className="px-4 py-4 text-sm text-[#445047]">{course.course.campus || '-'}</td>
-                      <td className="px-4 py-4 text-sm leading-6 text-[#445047]">
-                        {formatCourseSchedule(course)}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+              ) : selectedCourses.map((c) => (
+                <tr key={c.id}>
+                  <td>
+                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                      {c.course.course_name}
+                    </p>
+                    <p className="mt-0.5 font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      {c.course.course_code}
+                    </p>
+                  </td>
+                  <td className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    {c.course.teacher || '—'}
+                  </td>
+                  <td className="text-sm tabular-nums" style={{ color: 'var(--text-secondary)' }}>
+                    {c.course.credits.toFixed(1)}
+                  </td>
+                  <td>
+                    <Pill tone="neutral">{c.custom_category || c.course.category}</Pill>
+                  </td>
+                  <td className="max-w-[12rem] text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    {formatCourseSchedule(c)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </Surface>

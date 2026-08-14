@@ -14,6 +14,10 @@ import webbrowser
 import argparse
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from core.app_paths import default_static_dir, is_frozen, user_data_dir
+
 
 def parse_arguments():
     """解析命令行参数"""
@@ -22,7 +26,21 @@ def parse_arguments():
     parser.add_argument("--host", default="127.0.0.1", help="服务器主机 (默认: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8000, help="服务器端口 (默认: 8000)")
     parser.add_argument("--dev", action="store_true", help="开发模式（启用热重载）")
+    parser.add_argument(
+        "--log-level",
+        default=None,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="日志级别（默认 WARNING；DEBUG 会输出排课搜索过程）",
+    )
     return parser.parse_args()
+
+
+def _configure_utf8_output() -> None:
+    """避免 Windows 默认 GBK 控制台无法输出中文/符号导致启动失败。"""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
 
 
 def check_dependencies():
@@ -87,8 +105,13 @@ def check_port_available(host: str, port: int, force_kill: bool = False) -> bool
 
 
 def main():
+    _configure_utf8_output()
     args = parse_arguments()
-    
+
+    # 日志级别也可通过环境变量 PUMC_LOG_LEVEL 设置
+    if args.log_level:
+        os.environ["PUMC_LOG_LEVEL"] = args.log_level
+
     print("=" * 60)
     print("PUMC交互式排课系统 - Web版本")
     print("=" * 60)
@@ -105,6 +128,12 @@ def main():
     print(f"   API文档:  {url}/docs")
     print(f"   健康检查: {url}/api/health")
     print(f"   开发模式: {'是' if args.dev else '否'}")
+    if is_frozen():
+        print(f"   数据目录: {user_data_dir()}")
+    # 前端未构建/未捐绑时只有 API 可用，提前说清楚比让用户看到白页。
+    static_dir = default_static_dir()
+    if not (static_dir / "index.html").exists():
+        print(f"⚠️  前端产物未找到（{static_dir}），页面将不可用；请先在 web/ 执行 npm run build")
     print()
     
     # 检查端口是否被占用，如被占用则自动杀掉进程
@@ -122,13 +151,18 @@ def main():
     
     try:
         if args.dev:
-            import subprocess
-            cmd = [sys.executable, "-m", "uvicorn", 
-                   "web_backend.server:app", 
-                   "--host", host, 
-                   "--port", str(port), 
-                   "--reload"]
-            subprocess.run(cmd)
+            # 冻结包里没有 `-m uvicorn` 入口，也没有源文件可热重载。
+            if is_frozen():
+                print("⚠️  打包版不支持 --dev 热重载，已改为普通模式启动")
+                start_backend_server(host, port)
+            else:
+                import subprocess
+                cmd = [sys.executable, "-m", "uvicorn", 
+                       "web_backend.server:app", 
+                       "--host", host, 
+                       "--port", str(port), 
+                       "--reload"]
+                subprocess.run(cmd)
         else:
             start_backend_server(host, port)
     except KeyboardInterrupt:

@@ -1,46 +1,58 @@
 #!/usr/bin/env python3
-"""
-排课引擎
-基于OR-Tools CP-SAT求解器的核心排课算法实现
+"""排课引擎
+
+核心排课算法：三阶段策略 + 回溯搜索。
+
+历史说明（战略项已收收尾）：
+本文件曾同时包含两套求解器——一套基于 OR-Tools CP-SAT
+（``_build_model`` / ``_add_*_constraints`` / ``_set_objective`` /
+``_solve_model`` / ``SolutionCollector``），一套自定义回溯算法。
+但 CP-SAT 那套：
+
+* **没有任何调用方**（GitNexus 确认 ``_build_model`` / ``_solve_model``
+  无入边、不属于任何执行流）；
+* 实现本身不完整：时间约束的主循环体是 ``pass``（占用表永远为空），
+  校区约束与每日上限也是 ``pass``，学分约束还引用了不存在的
+  ``config.enforce_credit_requirements``；
+* 与回溯路径重复定义了同一批约束语义，两边容易逐渐不一致。
+
+因此已删除 CP-SAT 残代码，只保留真正生效的回溯实现：
+``generate_schedules()`` → ``_schedule_timed_courses()`` →
+``_constraint_satisfaction_scheduling()`` → ``_backtrack_scheduling()``。
+如将来确定要改用 CP-SAT，应在约束语义和特征测试稳定后重写，
+而不是继续养一份不可达的半成品。
 """
 
 import time
 from typing import List, Dict, Optional, Tuple, Set
 from collections import defaultdict
 
-try:
-    from ortools.sat.python import cp_model
-
-    ORTOOLS_AVAILABLE = True
-except ImportError:
-    ORTOOLS_AVAILABLE = False
-    print("警告: OR-Tools未安装，排课功能将不可用")
-
-from ..models import Course, SelectedCourse, TimeSlot
+from ..logging_config import get_logger
+from ..models import SelectedCourse, TimeSlot
 from ..credit_manager import CreditManager
 from .config import SchedulingConfig
 from .constraints import ConstraintChecker
 from .models import ScheduleResult, ScheduleStatus
 from .evaluator import ScheduleEvaluator
 
+logger = get_logger(__name__)
+
 
 class SchedulingEngine:
     """排课引擎"""
+
+    # 回溯阶段至少搜集这么多个候选解，再按评分选最优。
+    # 取 8 是在“能跳出首个贪心解”和“不把求解时间拖长”之间取平衡；
+    # 搜索仍受 max_solve_time_seconds 截止，不会因此无限变慢。
+    # ponytail: 定值候选池，若大规模课表下最优性不够再改自适应。
+    CANDIDATE_POOL_SIZE = 8
 
     def __init__(self, config: SchedulingConfig, credit_manager: CreditManager):
         self.config = config
         self.credit_manager = credit_manager
         self.constraint_checker = ConstraintChecker(config, credit_manager)
         self.evaluator = ScheduleEvaluator(config)
-
-        if not ORTOOLS_AVAILABLE:
-            raise ImportError(
-                "OR-Tools未安装，无法使用排课功能。\n"
-                "请运行以下命令安装OR-Tools：\n"
-                "pip install ortools\n"
-                "或者：\n"
-                "conda install -c conda-forge ortools"
-            )
+        self._timed_out = False
 
     def generate_schedules(
         self,
@@ -52,6 +64,9 @@ class SchedulingEngine:
 
         if max_solutions is None:
             max_solutions = self.config.max_solutions
+
+        # 🔧 P0 修复：超时标记，供回溯算法回写并影响最终结果状态
+        self._timed_out = False
 
         print(f"开始排课：{len(available_courses)} 门可选课程")
         print(
@@ -67,12 +82,11 @@ class SchedulingEngine:
             requirement.completed_credits = requirement.base_completed_credits
 
         # 调试：打印CreditManager状态
-        print("🔍 CreditManager状态检查：")
+        logger.debug("CreditManager状态检查：")
         for category, requirement in self.credit_manager.requirements.items():
-            print(
+            logger.debug(
                 f"  {category}: {requirement.completed_credits:.1f}/{requirement.required_credits:.1f} (已完成: {requirement.is_completed})"
             )
-        print()
 
         try:
             # 阶段1：处理无时间线上课程
@@ -104,6 +118,26 @@ class SchedulingEngine:
             # 按分数排序
             results.sort(key=lambda x: x.score.total_score, reverse=True)
 
+            # 🔧 P0 修复：超时且无任何可行解时，返回一个显式 TIMEOUT 结果，
+            # 而不是空列表——否则服务层只能报“未找到方案”，
+            # 用户无法区分“真的无解”和“时间不够”。
+            if not results and self._timed_out:
+                timeout_result = ScheduleResult(
+                    schedule_id="timeout",
+                    status=ScheduleStatus.TIMEOUT,
+                    selected_courses=[],
+                    solve_time_seconds=time.time() - start_time,
+                    total_courses_considered=len(available_courses),
+                )
+                timeout_result.add_warning(
+                    f"求解已达时间上限（{self.config.max_solve_time_seconds} 秒）且未找到可行方案，"
+                    "请尝试延长时间限制、放宽约束模式或减少待排课程。"
+                )
+                print(
+                    f"⚠️ 求解超时且无可行解，耗时 {time.time() - start_time:.2f} 秒"
+                )
+                return [timeout_result]
+
             print(
                 f"排课完成：生成 {len(results)} 个完整方案，耗时 {time.time() - start_time:.2f} 秒"
             )
@@ -127,24 +161,24 @@ class SchedulingEngine:
             return [failed_result]
         finally:
             # 🔧 关键修复：恢复CreditManager的原始状态
-            print("🔍 [调试] 开始恢复CreditManager状态...")
+            logger.debug("🔍 [调试] 开始恢复CreditManager状态...")
             for category, original_credits in original_completed.items():
                 if category in self.credit_manager.requirements:
                     current_credits = self.credit_manager.requirements[
                         category
                     ].completed_credits
                     if current_credits != original_credits:
-                        print(
+                        logger.debug(
                             f"🔍 [调试] 恢复 {category}: {current_credits:.1f} -> {original_credits:.1f}"
                         )
                         self.credit_manager.requirements[
                             category
                         ].completed_credits = original_credits
                     else:
-                        print(
+                        logger.debug(
                             f"✅ [调试] {category}: 状态未变化 ({current_credits:.1f})"
                         )
-            print("🔍 [调试] CreditManager状态恢复完成")
+            logger.debug("🔍 [调试] CreditManager状态恢复完成")
 
     def _separate_courses(
         self, courses: List[SelectedCourse]
@@ -355,12 +389,13 @@ class SchedulingEngine:
                     gap -= final_selected_course.course.credits
 
                     # 记录使用的时间段
-                    for time_slot in final_selected_course.time_slots:
-                        for week in time_slot.weeks:
-                            for section in range(
-                                time_slot.start_section, time_slot.end_section + 1
-                            ):
-                                time_slots_used.add((week, time_slot.weekday, section))
+                    # 🔧 P2 修复：统一使用 _time_slot_keys() 生成键。
+                    # 之前这里写入 (week, weekday, section)，
+                    # 而 _has_time_conflict/_add_course_time_slots 用
+                    # (weekday, section, week)，两套不兼容的键序。
+                    self._add_course_time_slots(
+                        final_selected_course, time_slots_used
+                    )
 
         return [selected_courses] if selected_courses else [[]]
 
@@ -384,15 +419,39 @@ class SchedulingEngine:
         credit_requirements = self._calculate_credit_requirements()
 
         # 第4步：使用回溯算法生成满足约束的方案
+        # 🔧 P0 修复：为活跃回溯路径设置时间上限
         solutions = []
+        deadline = None
+        if self.config.max_solve_time_seconds and self.config.max_solve_time_seconds > 0:
+            deadline = time.monotonic() + self.config.max_solve_time_seconds
+            print(f"求解时间上限：{self.config.max_solve_time_seconds} 秒")
+
+        # 回溯产出的先后取决于启发式，不等于评分顺序。对常见的小规模
+        # 单学期输入（<=12 个课程组）完整枚举截止时间内的全部候选，确保
+        # 返回的第一项真的是该搜索空间内最高评分方案。更大输入继续使用
+        # 有界候选池，避免指数搜索拖垮交互。
+        search_limit = (
+            float("inf")
+            if len(course_groups) <= 12
+            else max(max_solutions, self.CANDIDATE_POOL_SIZE)
+        )
+
         self._backtrack_scheduling(
             course_groups=course_groups,
             credit_requirements=credit_requirements,
             current_solution=[],
             used_time_slots=set(),
             solutions=solutions,
-            max_solutions=max_solutions,
+            max_solutions=search_limit,
+            deadline=deadline,
         )
+
+        if self._timed_out:
+            print(
+                f"⚠️ 求解超时（{self.config.max_solve_time_seconds} 秒），返回已找到的 {len(solutions)} 个方案"
+            )
+
+        solutions = self._rank_solutions(solutions, max_solutions)
 
         print(f"约束满足排课完成：生成 {len(solutions)} 个方案")
 
@@ -412,6 +471,38 @@ class SchedulingEngine:
             self._analyze_credit_distribution(timed_courses, credit_requirements)
 
         return solutions
+
+    def _rank_solutions(
+        self,
+        solutions: List[List[SelectedCourse]],
+        max_solutions: int,
+    ) -> List[List[SelectedCourse]]:
+        """去重并按评分降序，只保留前 max_solutions 个。
+
+        回溯会反复产出同一组课程（不同搜索路径、相同结果），
+        且产出顺序是搜索顺序而非质量顺序。前端只展示第一个方案，
+        所以必须在这里定序，否则用户拿到的是首个可行解而非最优解。
+        """
+        if not solutions:
+            return []
+
+        unique: Dict[Tuple, List[SelectedCourse]] = {}
+        for solution in solutions:
+            # 课程编码+班次能唯一确定一个方案
+            key = tuple(sorted((sc.course.code, sc.class_num) for sc in solution))
+            if key not in unique:
+                unique[key] = solution
+
+        def sort_key(solution: List[SelectedCourse]) -> Tuple[float, float, int]:
+            score = self.evaluator.evaluate_schedule(
+                solution, self.credit_manager, self.config
+            )
+            total_credits = sum(sc.course.credits for sc in solution)
+            # 评分相同时偏好学分多、课程多的方案
+            return (score.total_score, total_credits, len(solution))
+
+        ranked = sorted(unique.values(), key=sort_key, reverse=True)
+        return ranked[:max_solutions]
 
     def _group_courses_by_code_from_selected(
         self, selected_courses: List[SelectedCourse]
@@ -496,8 +587,19 @@ class SchedulingEngine:
         used_time_slots: Set[Tuple],
         solutions: List[List[SelectedCourse]],
         max_solutions: int,
+        deadline: Optional[float] = None,
     ):
-        """回溯算法进行排课"""
+        """回溯算法进行排课
+
+        deadline: time.monotonic() 绝对截止时间。超时后停止深入搜索，
+        保留已找到的解（对应 config.max_solve_time_seconds）。
+        """
+
+        # 🔧 P0 修复：落实时间限制。max_solve_time_seconds 之前只在
+        # 不可达的 CP-SAT 求解路径中使用，活跃回溯路径无任何上限。
+        if deadline is not None and time.monotonic() >= deadline:
+            self._timed_out = True
+            return
 
         # 如果已找到足够的解，停止搜索
         if len(solutions) >= max_solutions:
@@ -511,6 +613,11 @@ class SchedulingEngine:
             solutions.append(current_solution.copy())
             # 🔧 修正：不要立即返回，继续搜索其他解决方案
             # return  # 注释掉这个return，让算法继续搜索
+
+            # 🔧 P0 修复：达到上限后立即停止，避免超出 max_solutions。
+            # 之前只在函数入口和递归返回后检查，四个 append 点之间会溢出。
+            if len(solutions) >= max_solutions:
+                return
 
         # 🔧 修正：延迟保存部分解，避免过早保存影响搜索完整性
         # 注释掉中途保存部分解的逻辑，让算法完成完整搜索
@@ -536,15 +643,16 @@ class SchedulingEngine:
             if (
                 current_solution
                 and self.config.credit_constraint_mode.value == "optimal"
+                and len(solutions) < max_solutions
             ):
                 # 🔧 增加调试信息：显示保存的解的详细内容
                 course_codes = [sc.course.code for sc in current_solution]
                 total_credits = sum(sc.course.credits for sc in current_solution)
                 solutions.append(current_solution.copy())
-                print(
+                logger.debug(
                     f"   💾 保存终端部分解：{len(current_solution)}门课程，总学分{total_credits:.1f}"
                 )
-                print(f"       课程列表: {course_codes}")
+                logger.debug(f"       课程列表: {course_codes}")
             return
 
         # 使用启发式选择：优先选择学分缺口最大的类别的课程
@@ -557,15 +665,16 @@ class SchedulingEngine:
             if (
                 current_solution
                 and self.config.credit_constraint_mode.value == "optimal"
+                and len(solutions) < max_solutions
             ):
                 # 🔧 增加调试信息：显示启发式保存的解的详细内容
                 course_codes = [sc.course.code for sc in current_solution]
                 total_credits = sum(sc.course.credits for sc in current_solution)
                 solutions.append(current_solution.copy())
-                print(
+                logger.debug(
                     f"   💾 保存启发式部分解：{len(current_solution)}门课程，总学分{total_credits:.1f}"
                 )
-                print(f"       课程列表: {course_codes}")
+                logger.debug(f"       课程列表: {course_codes}")
             return
 
         # 尝试该课程组的每个班次
@@ -584,7 +693,7 @@ class SchedulingEngine:
                     self._add_course_time_slots(candidate_course, new_used_slots)
 
                     # 递归搜索
-                    print(
+                    logger.debug(
                         f"       🔄 递归搜索：添加 {candidate_course.course.code}，当前解包含 {len(current_solution)} 门课程"
                     )
                     self._backtrack_scheduling(
@@ -594,6 +703,7 @@ class SchedulingEngine:
                         new_used_slots,
                         solutions,
                         max_solutions,
+                        deadline,
                     )
 
                     # 🔧 修复：在回溯前检查当前解是否应该被保存
@@ -601,6 +711,7 @@ class SchedulingEngine:
                         current_solution
                         and len(current_solution) >= 6
                         and self.config.credit_constraint_mode.value == "optimal"
+                        and len(solutions) < max_solutions
                     ):
                         credit_satisfaction = self._calculate_credit_satisfaction_rate(
                             current_solution, credit_requirements
@@ -623,19 +734,24 @@ class SchedulingEngine:
                                     sc.course.credits for sc in current_solution
                                 )
                                 solutions.append(current_solution.copy())
-                                print(
+                                logger.debug(
                                     f"       💾 保存回溯前解：{len(current_solution)}门课程，总学分{total_credits:.1f}"
                                 )
-                                print(f"           课程列表: {course_codes}")
+                                logger.debug(f"           课程列表: {course_codes}")
 
                     # 回溯
-                    print(
+                    logger.debug(
                         f"       ⬅️ 回溯：移除 {candidate_course.course.code}，回到 {len(current_solution) - 1} 门课程"
                     )
                     current_solution.pop()
 
                     # 如果已找到足够的解，提前退出
                     if len(solutions) >= max_solutions:
+                        return
+
+                    # 超时后也要提前退出，避免继续尝试其他班次
+                    if deadline is not None and time.monotonic() >= deadline:
+                        self._timed_out = True
                         return
 
         # 🔧 关键修复：无论当前课程组是否添加成功，都要继续尝试其他课程组
@@ -659,6 +775,7 @@ class SchedulingEngine:
                 used_time_slots,
                 solutions,
                 max_solutions,
+                deadline,
             )
 
     def _is_credit_requirements_satisfied(
@@ -755,15 +872,9 @@ class SchedulingEngine:
         self, candidate_course: SelectedCourse, used_time_slots: Set[Tuple]
     ) -> bool:
         """检查时间冲突"""
-        for time_slot in candidate_course.time_slots:
-            for week in time_slot.weeks:
-                for section in range(
-                    time_slot.start_section, time_slot.end_section + 1
-                ):
-                    time_key = (time_slot.weekday, section, week)
-                    if time_key in used_time_slots:
-                        return True
-        return False
+        return any(
+            key in used_time_slots for key in self._time_slot_keys(candidate_course)
+        )
 
     def _is_campus_compatible(
         self, candidate_course: SelectedCourse, current_solution: List[SelectedCourse]
@@ -789,73 +900,41 @@ class SchedulingEngine:
                     # 日内模式：同一天不允许跨校区
                     return False
                 elif self.config.campus_conflict_mode == CampusConflictMode.PERIOD:
-                    # 时段模式：检查是否在同一时段内
-                    if self._courses_in_same_period(candidate_course, existing_course):
+                    # 时段模式：按配置的最小转场节次判断，而不是固定时段分组。
+                    # ConstraintChecker 使用相同的语义，确保“搜索是否接纳”与
+                    # “结果是否判冲突”不会互相矛盾。
+                    if not self._has_sufficient_campus_transfer_time(
+                        candidate_course, existing_course
+                    ):
                         return False
 
         return True
 
-    def _courses_in_same_period(
-        self, course1: SelectedCourse, course2: SelectedCourse
-    ) -> bool:
-        """检查两门课程是否在同一时段内（考虑周次重叠）"""
-        # 定义时段
-        periods = [
-            (1, 4),  # 时段1：第1-4节
-            (5, 8),  # 时段2：第5-8节
-            (9, 10),  # 时段3：第9-10节
-        ]
-
-        for slot1 in course1.time_slots:
-            for slot2 in course2.time_slots:
-                # 只检查同一天的课程
-                if slot1.weekday != slot2.weekday:
-                    continue
-
-                # 检查是否在同一时段内
-                for period_start, period_end in periods:
-                    # 检查两个时间段是否都与当前时段有重叠
-                    slot1_in_period = (
-                        slot1.start_section <= period_end
-                        and slot1.end_section >= period_start
-                    )
-                    slot2_in_period = (
-                        slot2.start_section <= period_end
-                        and slot2.end_section >= period_start
-                    )
-
-                    if slot1_in_period and slot2_in_period:
-                        # 进一步检查周次是否有重叠
-                        weeks1_set = set(slot1.weeks)
-                        weeks2_set = set(slot2.weeks)
-                        weeks_overlap = weeks1_set & weeks2_set
-
-                        # 只有在周次重叠时才认为在同一时段内
-                        if weeks_overlap:
-                            return True
-
-        return False
-
     def _has_sufficient_campus_transfer_time(
         self, course1: SelectedCourse, course2: SelectedCourse
     ) -> bool:
-        """检查两门课程间是否有足够的校区转换时间"""
+        """检查两门课程间是否有足够的跨校区转场时间。
+
+        仅同一天且周次重叠时需要转场。间隔定义为两段课程之间完整空出的
+        节次数，例如 1-2 节与 7-8 节之间有 4 个空节（3-6）。
+        """
         min_gap = self.config.min_campus_transfer_time
 
         for ts1 in course1.time_slots:
             for ts2 in course2.time_slots:
-                if ts1.weekday == ts2.weekday:
-                    # 检查周次是否重叠
-                    weeks1 = set(ts1.weeks)
-                    weeks2 = set(ts2.weeks)
-                    if weeks1 & weeks2:  # 有重叠周次
-                        # 计算时间间隔
-                        gap1 = abs(ts1.start_section - ts2.end_section - 1)
-                        gap2 = abs(ts2.start_section - ts1.end_section - 1)
-                        min_actual_gap = min(gap1, gap2)
+                if ts1.weekday != ts2.weekday:
+                    continue
+                if not (set(ts1.weeks) & set(ts2.weeks)):
+                    continue
 
-                        if min_actual_gap < min_gap:
-                            return False
+                if ts1.start_section <= ts2.start_section:
+                    earlier, later = ts1, ts2
+                else:
+                    earlier, later = ts2, ts1
+
+                gap = later.start_section - earlier.end_section - 1
+                if gap < min_gap:
+                    return False
         return True
 
     def _courses_on_same_day(
@@ -887,17 +966,27 @@ class SchedulingEngine:
 
         return int(min_gap) if min_gap != float("inf") else 0
 
-    def _add_course_time_slots(
-        self, course: SelectedCourse, used_time_slots: Set[Tuple]
-    ):
-        """将课程的时间段添加到已使用时间段集合"""
+    @staticmethod
+    def _time_slot_keys(course: SelectedCourse):
+        """生成课程占用的时间段键
+
+        🔧 P2 修复：以前三处分别手写 (weekday, section, week) 和
+        (week, weekday, section) 两种键序，写入和读取对不上，
+        使部分时间冲突检测静默失效。现在只从这一处生成。
+        键序约定：(weekday, section, week)。
+        """
         for time_slot in course.time_slots:
             for week in time_slot.weeks:
                 for section in range(
                     time_slot.start_section, time_slot.end_section + 1
                 ):
-                    time_key = (time_slot.weekday, section, week)
-                    used_time_slots.add(time_key)
+                    yield (time_slot.weekday, section, week)
+
+    def _add_course_time_slots(
+        self, course: SelectedCourse, used_time_slots: Set[Tuple]
+    ):
+        """将课程的时间段添加到已使用时间段集合"""
+        used_time_slots.update(self._time_slot_keys(course))
 
     def _intelligent_course_filtering(
         self, timed_courses: List[SelectedCourse]
@@ -1014,74 +1103,83 @@ class SchedulingEngine:
         """检查是否应该添加该课程（学分效率约束）"""
         category = candidate.custom_category
 
-        print(f"🔍 检查课程 {candidate.course.code} (类别: {category})")
+        logger.debug(f"🔍 检查课程 {candidate.course.code} (类别: {category})")
 
         # 获取该类别的学分要求信息
         requirement = self.credit_manager.get_requirement(category)
         if not requirement:
             # 如果类别不存在于学分管理器中，不允许添加
-            print(
+            logger.debug(
                 f"   ❌ 学分效率约束：未知类别 {category}，拒绝 {candidate.course.code}"
             )
             return False
 
-        print(
+        logger.debug(
             f"   📊 类别状态：{requirement.completed_credits:.1f}/{requirement.required_credits:.1f} (已完成: {requirement.is_completed})"
         )
 
         # 检查该类别是否已经修满
         if requirement.is_completed:
-            print(
+            logger.debug(
                 f"   ❌ 学分效率约束：{category} 已修满({requirement.completed_credits:.1f}/{requirement.required_credits:.1f})，拒绝 {candidate.course.code}"
             )
             return False
 
         # 如果该类别没有学分缺口，不允许添加
         if category not in credit_requirements:
-            print(
+            logger.debug(
                 f"   ❌ 学分效率约束：{category} 无学分缺口，拒绝 {candidate.course.code}"
             )
             return False
 
-        required_credits = credit_requirements[category]
+        # credit_requirements[category] 已经是“还差多少学分”的缺口（required - completed）
+        # 因此这里只能累加本次新选的学分，不能再加 completed_credits（否则重复扣减）
+        required_gap = credit_requirements[category]
 
-        # 计算该类别当前已选的学分（包括已修学分）
-        current_credits = 0
+        # 计算该类别本次已选的新增学分
+        selected_gap_credits = 0.0
         selected_in_category = []
         for sc in selected_courses:
             if sc.custom_category == category:
-                current_credits += sc.course.credits
+                selected_gap_credits += sc.course.credits
                 selected_in_category.append(sc.course.code)
-
-        # 加上已修学分
-        current_credits += requirement.completed_credits
 
         # 调试信息：显示当前已选课程
         if selected_in_category:
-            print(
-                f"   📋 当前已选{category}课程: {selected_in_category} (总学分: {current_credits:.1f})"
+            logger.debug(
+                f"   📋 当前已选{category}课程: {selected_in_category} (新增学分: {selected_gap_credits:.1f}/缺口 {required_gap:.1f})"
             )
         else:
-            print(
-                f"   📋 当前未选择{category}课程 (已修学分: {requirement.completed_credits:.1f})"
+            logger.debug(
+                f"   📋 当前未选择{category}课程 (已修学分: {requirement.completed_credits:.1f}，缺口: {required_gap:.1f})"
             )
 
-        # 如果已经满足要求，不再添加更多课程
-        if current_credits >= required_credits:
-            print(
-                f"   ❌ 学分效率约束：{category} 已满足要求({current_credits:.1f}/{required_credits:.1f})，跳过 {candidate.course.code}"
+        # 如果已经填满缺口，不再添加更多课程
+        if selected_gap_credits >= required_gap:
+            logger.debug(
+                f"   ❌ 学分效率约束：{category} 已满足要求(新增 {selected_gap_credits:.1f}/缺口 {required_gap:.1f})，跳过 {candidate.course.code}"
             )
             return False
 
         # 如果未满足要求，检查添加后是否会过度超出
-        new_total = current_credits + candidate.course.credits
-        if new_total > required_credits + 1:  # 允许最多1学分的必要超出
-            print(
-                f"   ❌ 学分效率约束：添加 {candidate.course.code}({candidate.course.credits}学分) 会导致 {category} 过度超出({new_total:.1f}/{required_credits:.1f})"
+        # 🔧 P0 修复：使用配置的溢出比例，而不是硬编码的 1 学分。
+        # 溢出上限 = 缺口 * (1 + max_credit_overflow_ratio)。
+        # ratio=0 表示不允许超出缺口；allow_credit_overflow=False 同效。
+        new_total = selected_gap_credits + candidate.course.credits
+        if self.config.allow_credit_overflow:
+            overflow_allowance = required_gap * self.config.max_credit_overflow_ratio
+        else:
+            overflow_allowance = 0.0
+        overflow_limit = required_gap + overflow_allowance
+
+        # 浮点容差，避免 0.1+0.2 类误差误报
+        if new_total > overflow_limit + 1e-9:
+            logger.debug(
+                f"   ❌ 学分效率约束：添加 {candidate.course.code}({candidate.course.credits}学分) 会导致 {category} 过度超出({new_total:.1f} > 上限 {overflow_limit:.1f})"
             )
             return False
 
-        print(f"   ✅ 允许添加 {candidate.course.code}")
+        logger.debug(f"   ✅ 允许添加 {candidate.course.code}")
         return True
 
     def _allocate_time_slot(
@@ -1100,10 +1198,13 @@ class SchedulingEngine:
                 weeks = list(range(start_week, min(start_week + 8, 21)))  # 8周课程
 
                 # 检查是否有冲突
+                # 🔧 P2 修复：使用与 _add_course_time_slots 一致的键序
+                # (weekday, section, week)，之前这里用的是 (week, weekday, section)，
+                # 导致冲突检测永远未命中。
                 conflict = False
                 for week in weeks:
                     for section in range(start_section, end_section + 1):
-                        if (week, weekday, section) in used_slots:
+                        if (weekday, section, week) in used_slots:
                             conflict = True
                             break
                     if conflict:
@@ -1118,215 +1219,6 @@ class SchedulingEngine:
                     )
 
         return None  # 无法分配时间段
-
-    def _group_courses_by_code(self, courses: List[Course]) -> Dict[str, List[Course]]:
-        """按课程编码分组"""
-        groups = defaultdict(list)
-        for course in courses:
-            groups[course.code].append(course)
-        return dict(groups)
-
-    def _build_model(self, course_groups: Dict[str, List[Course]]) -> Tuple:
-        """构建OR-Tools模型"""
-        model = cp_model.CpModel()
-
-        # 决策变量：每个课程组选择哪个班次（-1表示不选）
-        variables = {}
-        course_mapping = {}  # 变量值到课程的映射
-
-        for course_code, courses in course_groups.items():
-            # 为每个课程组创建一个变量，值域为 [0, len(courses)]
-            # 0 表示不选择该课程，1-n 表示选择第几个班次
-            var = model.NewIntVar(0, len(courses), f"course_{course_code}")
-            variables[course_code] = var
-
-            # 建立映射关系
-            course_mapping[course_code] = {
-                i + 1: course for i, course in enumerate(courses)
-            }
-
-        # 添加约束
-        self._add_constraints(model, variables, course_mapping)
-
-        # 设置目标函数
-        self._set_objective(model, variables, course_mapping)
-
-        return model, variables, course_mapping
-
-    def _add_constraints(self, model, variables: Dict, course_mapping: Dict):
-        """添加约束条件"""
-
-        # 1. 时间冲突约束
-        self._add_time_conflict_constraints(model, variables, course_mapping)
-
-        # 2. 校区冲突约束
-        self._add_campus_conflict_constraints(model, variables, course_mapping)
-
-        # 3. 学分约束
-        self._add_credit_constraints(model, variables, course_mapping)
-
-        # 4. 每日课程数限制
-        self._add_daily_limit_constraints(model, variables, course_mapping)
-
-    def _add_time_conflict_constraints(
-        self, model, variables: Dict, course_mapping: Dict
-    ):
-        """添加时间冲突约束"""
-        # 构建时间段占用表
-        time_slots_usage = defaultdict(
-            list
-        )  # {(weekday, section, week): [(course_code, class_index), ...]}
-
-        for course_code, class_mapping in course_mapping.items():
-            for class_index, course in class_mapping.items():
-                # 这里需要从课程数据中获取时间安排
-                # 由于Course模型中没有时间信息，我们需要扩展或使用其他方式
-                # 暂时跳过具体实现，使用占位符
-                pass
-
-        # 添加时间冲突约束
-        for time_key, course_list in time_slots_usage.items():
-            if len(course_list) > 1:
-                # 同一时间段最多选择一门课程
-                constraint_vars = []
-                for course_code, class_index in course_list:
-                    var = variables[course_code]
-                    # 创建布尔变量表示是否选择了这个班次
-                    bool_var = model.NewBoolVar(f"selected_{course_code}_{class_index}")
-                    # 正确的约束写法
-                    model.Add(var == class_index).OnlyEnforceIf(bool_var)
-                    model.Add(var != class_index).OnlyEnforceIf(bool_var.Not())
-                    constraint_vars.append(bool_var)
-
-                # 最多选择一个
-                model.Add(sum(constraint_vars) <= 1)
-
-    def _add_campus_conflict_constraints(
-        self, model, variables: Dict, course_mapping: Dict
-    ):
-        """添加校区冲突约束"""
-        # 根据配置决定是否添加校区约束
-        if self.config.campus_conflict_mode.value == "disabled":
-            return
-
-        # 实现校区冲突约束逻辑
-        # 暂时跳过具体实现
-        pass
-
-    def _add_credit_constraints(self, model, variables: Dict, course_mapping: Dict):
-        """添加学分约束"""
-        if not self.config.enforce_credit_requirements:
-            return
-
-        # 按类别统计学分
-        category_credits = defaultdict(
-            list
-        )  # {category: [(course_code, class_index, credits), ...]}
-
-        for course_code, class_mapping in course_mapping.items():
-            for class_index, course in class_mapping.items():
-                category = course.category  # 使用原始类别，实际应用中可能需要映射
-                credits = course.credits
-                category_credits[category].append((course_code, class_index, credits))
-
-        # 为每个类别添加学分约束
-        for category, requirement in self.credit_manager.requirements.items():
-            if category not in category_credits:
-                continue
-
-            # 计算该类别的总学分
-            credit_vars = []
-            for course_code, class_index, credits in category_credits[category]:
-                var = variables[course_code]
-                # 创建布尔变量
-                bool_var = model.NewBoolVar(
-                    f"credit_{category}_{course_code}_{class_index}"
-                )
-                # 正确的约束写法
-                model.Add(var == class_index).OnlyEnforceIf(bool_var)
-                model.Add(var != class_index).OnlyEnforceIf(bool_var.Not())
-
-                # 学分贡献
-                credit_contribution = model.NewIntVar(
-                    0, int(credits * 10), f"credit_contrib_{course_code}"
-                )
-                model.Add(
-                    credit_contribution == bool_var * int(credits * 10)
-                )  # 乘以10避免浮点数
-                credit_vars.append(credit_contribution)
-
-            # 学分要求约束
-            if credit_vars:
-                total_credits = model.NewIntVar(
-                    0,
-                    sum(int(c[2] * 10) for c in category_credits[category]),
-                    f"total_credits_{category}",
-                )
-                model.Add(total_credits == sum(credit_vars))
-
-                # 最低学分要求
-                min_credits = int(requirement.required_credits * 10)
-                model.Add(total_credits >= min_credits)
-
-                # 最高学分限制（如果不允许超出）
-                if not self.config.allow_credit_overflow:
-                    model.Add(total_credits <= min_credits)
-
-    def _add_daily_limit_constraints(
-        self, model, variables: Dict, course_mapping: Dict
-    ):
-        """添加每日课程数限制"""
-        # 实现每日课程数限制
-        # 暂时跳过具体实现
-        pass
-
-    def _set_objective(self, model, variables: Dict, course_mapping: Dict):
-        """设置目标函数"""
-        # 目标：最大化选择的课程数（简化版本）
-        objective_vars = []
-
-        for course_code, var in variables.items():
-            # 创建布尔变量表示是否选择了该课程
-            selected = model.NewBoolVar(f"selected_{course_code}")
-            # 正确的约束写法
-            model.Add(var > 0).OnlyEnforceIf(selected)
-            model.Add(var == 0).OnlyEnforceIf(selected.Not())
-            objective_vars.append(selected)
-
-        # 最大化选择的课程数
-        model.Maximize(sum(objective_vars))
-
-    def _solve_model(
-        self, model, variables: Dict, course_mapping: Dict, max_solutions: int
-    ) -> List[List[SelectedCourse]]:
-        """求解模型"""
-        solver = cp_model.CpSolver()
-
-        # 设置求解参数
-        solver.parameters.max_time_in_seconds = self.config.max_solve_time_seconds
-        solver.parameters.enumerate_all_solutions = True
-
-        # 解收集器
-        solution_collector = SolutionCollector(variables, course_mapping, max_solutions)
-
-        # 求解
-        status = solver.Solve(model, solution_collector)
-
-        if status == cp_model.OPTIMAL:
-            print("找到最优解")
-        elif status == cp_model.FEASIBLE:
-            print("找到可行解")
-        elif status == cp_model.INFEASIBLE:
-            print("无可行解")
-            return []
-        elif status == cp_model.MODEL_INVALID:
-            print("模型无效")
-            return []
-        else:
-            print("求解超时或其他错误")
-            return []
-
-        return solution_collector.solutions
 
     def _create_schedule_result(
         self,
@@ -1353,6 +1245,14 @@ class SchedulingEngine:
 
         if not hard_constraints_satisfied:
             result.status = ScheduleStatus.PARTIAL
+
+        # 🔧 P0 修复：求解超时时标记状态，使上层可以区分“完整搜索完成”与“超时截断”
+        if getattr(self, "_timed_out", False):
+            if result.status == ScheduleStatus.SUCCESS:
+                result.status = ScheduleStatus.TIMEOUT
+            result.add_warning(
+                f"求解已达时间上限（{self.config.max_solve_time_seconds} 秒），结果可能不是最优解"
+            )
 
         # 评估方案（传递配置参数）
         result.score = self.evaluator.evaluate_schedule(
@@ -1436,48 +1336,3 @@ class SchedulingEngine:
         # 简化检查：假设可以为每门课程分配不同的时间段
         # 实际实现中可以更精确地检查时间冲突
         return len(combination) <= 5  # 假设最多可以安排5门课程
-
-
-if ORTOOLS_AVAILABLE:
-
-    class SolutionCollector(cp_model.CpSolverSolutionCallback):
-        """解收集器"""
-
-        def __init__(self, variables: Dict, course_mapping: Dict, max_solutions: int):
-            cp_model.CpSolverSolutionCallback.__init__(self)
-            self.variables = variables
-            self.course_mapping = course_mapping
-            self.max_solutions = max_solutions
-            self.solutions = []
-
-        def on_solution_callback(self):
-            """找到解时的回调"""
-            if len(self.solutions) >= self.max_solutions:
-                self.StopSearch()
-                return
-
-            selected_courses = []
-
-            for course_code, var in self.variables.items():
-                value = self.Value(var)
-                if value > 0:  # 选择了该课程
-                    course = self.course_mapping[course_code][value]
-
-                    # 创建SelectedCourse对象
-                    # 注意：这里需要时间安排信息，暂时使用空列表
-                    selected_course = SelectedCourse(
-                        course=course,
-                        class_num=course.class_num,
-                        time_slots=[],  # 需要从课程数据中获取
-                        is_online=False,
-                        custom_category=course.category,
-                        is_imported=False,  # 排课引擎生成的课程不是导入的
-                    )
-                    selected_courses.append(selected_course)
-
-            self.solutions.append(selected_courses)
-else:
-    # 如果ortools不可用，创建一个占位符类
-    class SolutionCollector:
-        def __init__(self, *args, **kwargs):
-            pass

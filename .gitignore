@@ -25,6 +25,11 @@ installer_output/
 # Excel files (data)
 *.xlsx
 *.xls
+# 例外：三个学期的源课程表是 E2E 脚本的必需输入，必须入库
+!test_data/*.xls
+
+# 测试运行产物（后端日志、生成的 fixture 与报告）
+test_data/generated/
 
 # IDE and editor files
 .vscode/
@@ -53,3 +58,4 @@ ehthumbs.db
 .coverage
 htmlcov/
 web/node_modules
+.claude/

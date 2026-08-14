@@ -107,6 +107,8 @@ def _task_base_payload(record: SchedulingTaskRecord) -> Dict[str, object]:
         "is_active": record.is_active,
         "is_finished": record.is_finished,
         "can_cancel": record.can_cancel,
+        # 🔧 P1 修复：向前端暴露进度
+        "percent": getattr(record, "percent", 0),
     }
 
 
@@ -122,6 +124,7 @@ def _to_status_response(record: SchedulingTaskRecord, success: bool = True) -> S
     return SchedulingTaskStatusResponse(
         success=success,
         has_result=record.has_result,
+        result=_to_result_dto(record.result) if record.result else None,
         **_task_base_payload(record),
     )
 
@@ -198,12 +201,15 @@ async def get_scheduling_task_result(task_id: str):
 
 @router.post("/scheduling/cancel/{task_id}", response_model=SchedulingTaskStatusResponse)
 async def cancel_scheduling_task(task_id: str):
-    record = task_runtime.cancel_task(task_id)
-    if record is None:
+    existing = task_runtime.get_task(task_id)
+    if existing is None:
         raise HTTPException(status_code=404, detail="任务不存在")
-    if record.is_finished:
-        return _to_status_response(record, success=False)
-    return _to_status_response(record, success=True)
+    was_finished = existing.is_finished
+
+    record = task_runtime.cancel_task(task_id)
+    if record is None:  # 防御性处理：单进程运行时不应在两次读取间删除任务。
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return _to_status_response(record, success=not was_finished)
 
 
 @router.get("/scheduling/status")

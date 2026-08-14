@@ -24,6 +24,7 @@ from ..models.dto import (
     TimeSlotDTO,
 )
 from ..state import WebSessionContext
+from ..uploads import read_upload_bytes
 
 router = APIRouter(tags=["courses"])
 
@@ -62,12 +63,24 @@ def _course_to_dto(course: Course, class_index: int = 0) -> CourseDTO:
     )
 
 
+def _stable_selected_course_id(selected_course: SelectedCourse) -> str:
+    """为排课结果中的课程生成稳定 ID
+
+    🔧 P1 修复：之前未传 selected_id 时会生成新 uuid4()，
+    导致同一份排课结果每次 GET 都返回不同的课程 ID：
+    React 列表反复重建、结果无法稳定关联原已选课程。
+    课程编码 + 班次已能唯一确定一门课，用它作为稳定标识。
+    """
+    code = getattr(selected_course.course, "code", "") or "unknown"
+    return f"result-{code}-{selected_course.class_num}"
+
+
 def _selected_course_to_dto(
     selected_course: SelectedCourse,
     selected_id: Optional[str] = None,
 ) -> SelectedCourseDTO:
     return SelectedCourseDTO(
-        id=selected_id or str(uuid4()),
+        id=selected_id or _stable_selected_course_id(selected_course),
         course=_course_to_dto(selected_course.course, selected_course.class_num),
         class_index=selected_course.class_num,
         custom_category=selected_course.custom_category,
@@ -97,20 +110,35 @@ async def load_courses(
     data_service: IDataService = Depends(get_data_service),
     session: WebSessionContext = Depends(get_web_session),
 ):
-    suffix = Path(file.filename or "courses.xlsx").suffix or ".xlsx"
+    suffix = Path(file.filename or "courses.xlsx").suffix.lower() or ".xlsx"
+    if suffix not in {".xls", ".xlsx"}:
+        raise HTTPException(status_code=400, detail="课程一览表必须是 Excel 文件")
 
+    pending_path = session.artifacts_dir / f"course_catalog_pending{suffix}"
     try:
-        for candidate in session.artifacts_dir.glob("current_course_catalog.*"):
-            try:
-                candidate.unlink()
-            except OSError:
-                continue
+        content = await read_upload_bytes(file)
+        pending_path.write_bytes(content)
+
+        courses = data_service.load_courses(str(pending_path))
+        if not courses:
+            raise ValueError("课程表中没有可用课程")
 
         saved_path = session.artifacts_dir / f"current_course_catalog{suffix}"
-        saved_path.write_bytes(await file.read())
+        old_content = saved_path.read_bytes() if saved_path.exists() else None
+        pending_path.replace(saved_path)
+        try:
+            session.set_loaded_courses(courses, str(saved_path))
+        except Exception:
+            if old_content is None:
+                saved_path.unlink(missing_ok=True)
+            else:
+                saved_path.write_bytes(old_content)
+            raise
 
-        courses = data_service.load_courses(str(saved_path))
-        session.set_loaded_courses(courses, str(saved_path))
+        # 新文件已验证并提交后再删旧扩展名，失败上传不能破坏当前会话。
+        for candidate in session.artifacts_dir.glob("current_course_catalog.*"):
+            if candidate != saved_path:
+                candidate.unlink(missing_ok=True)
         report = data_service.get_load_report()
         warnings = report.get("column_warnings", [])
 
@@ -121,7 +149,11 @@ async def load_courses(
             courses=[_course_to_dto(course, course.class_num) for course in courses],
             warnings=warnings,
         )
+    except HTTPException:
+        pending_path.unlink(missing_ok=True)
+        raise
     except Exception as error:  # pragma: no cover
+        pending_path.unlink(missing_ok=True)
         return LoadCoursesResponse(
             success=False,
             message=f"加载失败: {error}",

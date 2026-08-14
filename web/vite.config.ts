@@ -29,9 +29,10 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
+          // ag-grid / zustand / react-query 已随不可达代码一同删除，
+          // 再列在这里会直接让 vite build 报
+          // "Could not resolve entry module"。
           vendor: ['react', 'react-dom', 'react-router-dom'],
-          ui: ['ag-grid-react', 'ag-grid-community'],
-          state: ['zustand', '@tanstack/react-query'],
         },
       },
     },

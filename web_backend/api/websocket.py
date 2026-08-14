@@ -74,23 +74,29 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 def setup_event_handlers(event_manager: IEventManager):
-    """设置事件处理器"""
+    """设置事件处理器
+
+    🔧 P1 修复：不再在 lambda 里直接调 asyncio.create_task——事件可能从
+    排课工作线程发出，那里没有运行中的 loop。现在统一注册协程处理器，
+    由 adapter._schedule_coroutine 负责线程安全地调度。
+    """
     adapter = get_event_adapter(event_manager)
-    
-    async def broadcast_handler(data):
-        await manager.broadcast("scheduling.started", data)
-    
-    adapter.register_handler("scheduling.started", broadcast_handler)
-    adapter.register_handler("scheduling.progress", 
-        lambda d: asyncio.create_task(manager.broadcast("scheduling.progress", d)))
-    adapter.register_handler("scheduling.completed", 
-        lambda d: asyncio.create_task(manager.broadcast("scheduling.completed", d)))
-    adapter.register_handler("scheduling.failed", 
-        lambda d: asyncio.create_task(manager.broadcast("scheduling.failed", d)))
-    adapter.register_handler("config.updated", 
-        lambda d: asyncio.create_task(manager.broadcast("config.updated", d)))
-    adapter.register_handler("courses.loaded", 
-        lambda d: asyncio.create_task(manager.broadcast("courses.loaded", d)))
+
+    def make_broadcaster(event_type: str):
+        async def broadcast_handler(data):
+            await manager.broadcast(event_type, data)
+
+        return broadcast_handler
+
+    for event_type in (
+        "scheduling.started",
+        "scheduling.progress",
+        "scheduling.completed",
+        "scheduling.failed",
+        "config.updated",
+        "courses.loaded",
+    ):
+        adapter.register_handler(event_type, make_broadcaster(event_type))
 
 
 @router.websocket("/ws")

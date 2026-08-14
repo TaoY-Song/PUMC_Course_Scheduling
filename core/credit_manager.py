@@ -7,6 +7,10 @@
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
+from .logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 @dataclass
 class CreditRequirement:
@@ -57,14 +61,14 @@ class CreditManager:
         self._initialize_requirements()
 
         # 🔧 调试：验证初始化状态
-        print("🔍 [调试] CreditManager初始化完成")
+        logger.debug("🔍 [调试] CreditManager初始化完成")
         for category, req in self.requirements.items():
             if req.completed_credits > 0 or req.base_completed_credits > 0:
-                print(
+                logger.debug(
                     f"⚠️ [调试] 发现非零学分: {category} - completed:{req.completed_credits}, base:{req.base_completed_credits}"
                 )
             else:
-                print(
+                logger.debug(
                     f"✅ [调试] 正常初始状态: {category} - completed:{req.completed_credits}, base:{req.base_completed_credits}"
                 )
 

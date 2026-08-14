@@ -12,7 +12,7 @@ from .interfaces import ISchedulingService, SchedulingStatus, ServiceEvent
 from ..models import SelectedCourse
 from ..scheduling.config import SchedulingConfig
 from ..scheduling.engine import SchedulingEngine
-from ..scheduling.models import ScheduleResult
+from ..scheduling.models import ScheduleResult, ScheduleStatus
 from ..credit_manager import CreditManager
 
 
@@ -56,7 +56,7 @@ class SchedulingService(ISchedulingService):
         with self._lock:
             if self._status == SchedulingStatus.RUNNING:
                 raise RuntimeError(f"服务当前状态为 {self._status.value}，无法执行排课")
-            
+
             self._status = SchedulingStatus.IDLE
 
             if not self._engine:
@@ -76,10 +76,57 @@ class SchedulingService(ISchedulingService):
                     self._event_manager.emit(event)
 
                 # 执行排课算法
-                results = self._engine.generate_schedules(courses, max_solutions=1)
+                # 🔧 P0 修复：使用配置的 max_solutions，而不是硬编码 1。
+                # 之前 Web UI 上的“最大解数”设置完全不生效。
+                results = self._engine.generate_schedules(
+                    courses, max_solutions=self._config.max_solutions
+                )
 
                 if results:
                     result = results[0]
+
+                    # 🔧 P0 修复：检查结果状态，失败/超时无解不应标记为完成
+                    if result.status == ScheduleStatus.FAILED:
+                        self._status = SchedulingStatus.FAILED
+
+                        # 从结果中提取失败原因
+                        error_msg = "\n".join(result.warnings) if result.warnings else "排课算法执行失败"
+
+                        # 发送失败事件
+                        if self._event_manager:
+                            event = ServiceEvent(
+                                event_type="scheduling_failed",
+                                data={"error": error_msg},
+                                timestamp=time.time(),
+                                source="scheduling_service",
+                            )
+                            self._event_manager.emit(event)
+
+                        return None
+
+                    # 超时且无任何选中课程：同样是失败，但原因是时间不够，
+                    # 需要把可操作的建议传给用户。
+                    if (
+                        result.status == ScheduleStatus.TIMEOUT
+                        and not result.selected_courses
+                    ):
+                        self._status = SchedulingStatus.FAILED
+                        error_msg = (
+                            "\n".join(result.warnings)
+                            if result.warnings
+                            else f"排课超时（{self._config.max_solve_time_seconds} 秒）且未找到可行方案"
+                        )
+                        if self._event_manager:
+                            event = ServiceEvent(
+                                event_type="scheduling_failed",
+                                data={"error": error_msg, "timeout": True},
+                                timestamp=time.time(),
+                                source="scheduling_service",
+                            )
+                            self._event_manager.emit(event)
+                        return None
+
+                    # 只有成功结果才标记为完成
                     self._status = SchedulingStatus.COMPLETED
 
                     # 发送完成事件
@@ -114,18 +161,6 @@ class SchedulingService(ISchedulingService):
 
                     return None
 
-            except ImportError as e:
-                # OR-Tools导入错误，发送特殊事件
-                self._status = SchedulingStatus.FAILED
-                if self._event_manager:
-                    event = ServiceEvent(
-                        event_type="ortools_missing",
-                        data={"error": str(e)},
-                        timestamp=time.time(),
-                        source="scheduling_service",
-                    )
-                    self._event_manager.emit(event)
-                return None
             except Exception as e:
                 self._status = SchedulingStatus.FAILED
 

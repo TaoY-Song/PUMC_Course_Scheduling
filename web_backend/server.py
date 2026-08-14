@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,6 +33,20 @@ from .api import courses, export, scheduling, supplement, websocket
 from .api.websocket import setup_event_handlers
 from .config import settings
 from .dependencies import get_event_manager
+from .services.event_adapter import get_event_adapter
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """应用生命周期（取代已弃用的 @app.on_event("startup")）。"""
+    event_manager = get_event_manager()
+    setup_event_handlers(event_manager)
+    # 🔧 P1 修复：在事件循环线程内绑定 loop，
+    # 以便排课工作线程发出的事件能被线程安全地转发到 WebSocket。
+    adapter = get_event_adapter(event_manager)
+    if adapter is not None:
+        adapter.bind_loop(asyncio.get_running_loop())
+    yield
+
 
 app = FastAPI(
     title="PUMC 智能排课系统 - Web API",
@@ -37,6 +54,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -54,12 +72,9 @@ app.include_router(supplement.router, prefix="/api")
 app.include_router(websocket.router)
 
 
-@app.on_event("startup")
-async def startup_event():
-    setup_event_handlers(get_event_manager())
-
-
-static_path = Path(settings.static_dir)
+# settings.static_dir 默认已是绝对路径，但仍允许通过 PUMC_STATIC_DIR
+# 传入相对路径；统一 resolve() 使其不受当前工作目录影响。
+static_path = Path(settings.static_dir).resolve()
 
 if static_path.exists():
     assets_path = static_path / "assets"

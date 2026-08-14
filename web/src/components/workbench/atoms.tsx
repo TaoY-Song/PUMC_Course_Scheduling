@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import { ChevronRight } from 'lucide-react';
 
+// ─── Surface ─────────────────────────────────────────────────────────────────
 interface SurfaceProps {
   title?: string;
   eyebrow?: string;
@@ -11,20 +11,28 @@ interface SurfaceProps {
 
 export function Surface({ title, eyebrow, children, className = '', action }: SurfaceProps) {
   return (
-    <section className={`rounded-[1.5rem] border border-[#d5ccb8] bg-[#fffaf0]/95 shadow-[0_24px_80px_rgba(20,34,28,0.08)] backdrop-blur ${className}`}>
+    <section
+      className={`rounded-xl border bg-white shadow-sm ${className}`}
+      style={{ borderColor: 'var(--border-card)' }}
+    >
       {(title || eyebrow || action) && (
-        <div className="flex items-start justify-between gap-4 border-b border-[#eadfcb] px-5 py-4">
+        <div
+          className="flex items-center justify-between gap-4 px-5 py-3.5"
+          style={{ borderBottom: '1px solid var(--border-subtle)' }}
+        >
           <div>
             {eyebrow && (
-              <p className="text-[0.7rem] uppercase tracking-[0.3em] text-[#7f7259]">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--text-muted)' }}>
                 {eyebrow}
               </p>
             )}
             {title && (
-              <h3 className="mt-1 text-lg font-semibold text-[#17221d]">{title}</h3>
+              <h3 className="mt-0.5 text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                {title}
+              </h3>
             )}
           </div>
-          {action}
+          {action && <div className="shrink-0">{action}</div>}
         </div>
       )}
       <div className="px-5 py-4">{children}</div>
@@ -32,54 +40,57 @@ export function Surface({ title, eyebrow, children, className = '', action }: Su
   );
 }
 
+// ─── MetricCard ───────────────────────────────────────────────────────────────
 interface MetricCardProps {
   label: string;
   value: string;
   hint?: string;
-  tone?: 'pine' | 'amber' | 'sand' | 'ink';
+  tone?: 'pine' | 'teal' | 'amber' | 'sand' | 'ink';
 }
 
-const metricTone: Record<NonNullable<MetricCardProps['tone']>, string> = {
-  pine: 'from-[#153128] to-[#2f5d50] text-white',
-  amber: 'from-[#9c6a1d] to-[#c58f3a] text-white',
-  sand: 'from-[#f4efe2] to-[#ede2cc] text-[#2a322d]',
-  ink: 'from-[#101d1a] to-[#263832] text-white',
-};
-
 export function MetricCard({ label, value, hint, tone = 'sand' }: MetricCardProps) {
+  const base = 'rounded-xl px-4 py-4 shadow-sm';
+  const toneMap: Record<string, string> = {
+    pine:  'metric-pine',
+    teal:  'metric-teal',
+    amber: 'metric-amber',
+    sand:  'metric-sand',
+    ink:   'metric-pine',
+  };
+
   return (
-    <div className={`rounded-[1.25rem] border border-[#ddd0ba] bg-gradient-to-br ${metricTone[tone]} px-4 py-4 shadow-[0_18px_45px_rgba(20,34,28,0.08)]`}>
-      <div className="text-[0.68rem] uppercase tracking-[0.28em] opacity-80">{label}</div>
-      <div className="mt-3 break-words text-2xl font-semibold leading-[1.08]">{value}</div>
-      {hint && <div className="mt-2 break-all text-sm leading-5 opacity-80">{hint}</div>}
+    <div className={`${base} ${toneMap[tone]}`}>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.22em] opacity-70">{label}</p>
+      <p className="mt-2 text-2xl font-semibold leading-none tabular-nums">{value}</p>
+      {hint && <p className="mt-1.5 text-xs leading-5 opacity-65">{hint}</p>}
     </div>
   );
 }
 
+// ─── Pill ─────────────────────────────────────────────────────────────────────
 interface PillProps {
   children: ReactNode;
   tone?: 'success' | 'warning' | 'danger' | 'info' | 'neutral';
   className?: string;
 }
 
-const pillTone: Record<NonNullable<PillProps['tone']>, string> = {
-  success: 'bg-emerald-100 text-emerald-900 border-emerald-200',
-  warning: 'bg-amber-100 text-amber-900 border-amber-200',
-  danger: 'bg-rose-100 text-rose-900 border-rose-200',
-  info: 'bg-sky-100 text-sky-900 border-sky-200',
-  neutral: 'bg-[#efe6d6] text-[#445047] border-[#dccfb8]',
+const pillClass: Record<string, string> = {
+  success: 'tag tag-teal',
+  warning: 'tag tag-amber',
+  danger:  'tag tag-red',
+  info:    'tag tag-blue',
+  neutral: 'tag tag-gray',
 };
 
 export function Pill({ children, tone = 'neutral', className = '' }: PillProps) {
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.72rem] font-medium ${pillTone[tone]} ${className}`}>
-      {children}
-    </span>
+    <span className={`${pillClass[tone]} ${className}`}>{children}</span>
   );
 }
 
+// ─── SectionTitle ─────────────────────────────────────────────────────────────
 interface SectionTitleProps {
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   description?: string;
   action?: ReactNode;
@@ -87,26 +98,87 @@ interface SectionTitleProps {
 
 export function SectionTitle({ eyebrow, title, description, action }: SectionTitleProps) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="flex flex-wrap items-start justify-between gap-3 pb-1">
       <div>
-        <p className="text-[0.72rem] uppercase tracking-[0.36em] text-[#8c7f67]">{eyebrow}</p>
-        <h2 className="mt-2 text-2xl font-semibold text-[#18241f]">{title}</h2>
-        {description && <p className="mt-2 max-w-3xl text-sm leading-6 text-[#58645b]">{description}</p>}
+        {eyebrow && (
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--text-muted)' }}>
+            {eyebrow}
+          </p>
+        )}
+        <h2 className="mt-0.5 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+          {title}
+        </h2>
+        {description && (
+          <p className="mt-1 max-w-2xl text-sm leading-6" style={{ color: 'var(--text-secondary)' }}>
+            {description}
+          </p>
+        )}
       </div>
-      {action}
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   );
 }
 
+// ─── IconChip (kept for compatibility) ───────────────────────────────────────
 interface IconChipProps {
   children: ReactNode;
 }
 
 export function IconChip({ children }: IconChipProps) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-[#d8cfbc] bg-white/80 px-3 py-1 text-xs font-medium text-[#39433c] shadow-sm">
-      <ChevronRight className="h-3 w-3" />
+    <span
+      className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium"
+      style={{ borderColor: 'var(--border-base)', color: 'var(--text-secondary)' }}
+    >
       {children}
     </span>
   );
+}
+
+// ─── Badge (new) ──────────────────────────────────────────────────────────────
+interface BadgeProps {
+  children: ReactNode;
+  variant?: 'default' | 'teal' | 'amber' | 'red';
+}
+
+export function Badge({ children, variant = 'default' }: BadgeProps) {
+  const v: Record<string, string> = {
+    default: 'tag tag-gray',
+    teal:    'tag tag-teal',
+    amber:   'tag tag-amber',
+    red:     'tag tag-red',
+  };
+  return <span className={v[variant]}>{children}</span>;
+}
+
+// ─── EmptyState ───────────────────────────────────────────────────────────────
+interface EmptyStateProps {
+  icon?: ReactNode;
+  title: string;
+  description?: string;
+  action?: ReactNode;
+}
+
+export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed py-12 text-center"
+         style={{ borderColor: 'var(--border-base)', background: 'rgba(0,0,0,0.01)' }}>
+      {icon && (
+        <div className="flex h-10 w-10 items-center justify-center rounded-full"
+             style={{ background: 'var(--accent-light)', color: 'var(--accent-ui)' }}>
+          {icon}
+        </div>
+      )}
+      <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{title}</p>
+      {description && (
+        <p className="max-w-xs text-xs leading-5" style={{ color: 'var(--text-muted)' }}>{description}</p>
+      )}
+      {action}
+    </div>
+  );
+}
+
+// ─── Separator ────────────────────────────────────────────────────────────────
+export function Separator({ className = '' }: { className?: string }) {
+  return <hr className={`border-0 border-t ${className}`} style={{ borderColor: 'var(--border-subtle)' }} />;
 }

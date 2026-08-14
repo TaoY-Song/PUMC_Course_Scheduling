@@ -29,7 +29,8 @@ const DEFAULT_SCHEDULING_CONFIG: SchedulingConfig = {
   max_solutions: 1,
   time_limit: 60,
   credit_overflow_ratio: 0.1,
-  campus_transition_time: 30,
+  // 单位：节次（与后端 min_campus_transfer_time 一致）
+  campus_transition_time: 2,
 };
 
 const SCHEDULING_WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';
@@ -118,6 +119,59 @@ function coerceString(value: unknown, fallback = ''): string {
   return String(value);
 }
 
+function normalizeTimeSlot(value: unknown): TimeSlot | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const day = coerceNumber(value.day_of_week ?? value.weekday, 0);
+  const start = coerceNumber(value.start_period ?? value.start_section, 0);
+  const end = coerceNumber(value.end_period ?? value.end_section, 0);
+  if (day <= 0 || start <= 0 || end < start) {
+    return null;
+  }
+  return {
+    day_of_week: day,
+    start_period: start,
+    end_period: end,
+    weeks: extractArray<number>(value.weeks, ['weeks']).map((week) => coerceNumber(week, 0)).filter(Boolean),
+  };
+}
+
+function normalizeCourse(value: unknown): Course {
+  const source = isRecord(value) ? value : {};
+  return {
+    course_code: coerceString(source.course_code ?? source.code, ''),
+    course_name: coerceString(source.course_name ?? source.name, ''),
+    department: coerceString(source.department, ''),
+    category: coerceString(source.category, ''),
+    credits: coerceNumber(source.credits, 0),
+    hours: coerceNumber(source.hours, 0),
+    teacher: coerceString(source.teacher, ''),
+    campus: coerceString(source.campus, ''),
+    is_online: Boolean(source.is_online),
+    time_slots: asArray<unknown>(source.time_slots).map(normalizeTimeSlot).filter((slot): slot is TimeSlot => slot !== null),
+    class_index: coerceNumber(source.class_index ?? source.class_num, 0),
+  };
+}
+
+function normalizeSelectedCourse(value: unknown): SelectedCourse {
+  const source = isRecord(value) ? value : {};
+  const course = normalizeCourse(source.course);
+  const classIndex = coerceNumber(source.class_index ?? source.class_num, course.class_index);
+  const timeSlots = asArray<unknown>(source.time_slots ?? course.time_slots)
+    .map(normalizeTimeSlot)
+    .filter((slot): slot is TimeSlot => slot !== null);
+  return {
+    id: coerceString(source.id, `result-${course.course_code || 'unknown'}-${classIndex}`),
+    course,
+    class_index: classIndex,
+    custom_category: coerceString(source.custom_category, course.category),
+    is_category_locked: Boolean(source.is_category_locked),
+    is_online: Boolean(source.is_online ?? course.is_online),
+    time_slots: timeSlots,
+  };
+}
+
 function isMissingEndpointError(error: unknown): boolean {
   if (!error || typeof error !== 'object') {
     return false;
@@ -172,24 +226,21 @@ function normalizeSchedulingConfig(value: unknown): SchedulingConfig {
   };
 }
 
-function normalizeScheduleResult(value: unknown): ScheduleResult | null {
+export function normalizeScheduleResult(value: unknown): ScheduleResult | null {
   const source = unwrapData<UnknownRecord>(value, ['data', 'result']) ?? null;
   if (!source) {
     return null;
   }
 
-  const selectedCourses = extractArray<SelectedCourse>(source.selected_courses, ['selected_courses']);
+  const selectedCourses = extractArray<unknown>(source.selected_courses, ['selected_courses']).map(
+    normalizeSelectedCourse,
+  );
   const scoreSource = isRecord(source.score) ? source.score : {};
   const conflicts = extractArray<ScheduleResult['conflicts'][number]>(source.conflicts, ['conflicts']);
 
   return {
-    id: coerceString(source.id, `result-${Date.now()}`),
-    selected_courses:
-      selectedCourses.length > 0
-        ? selectedCourses
-        : Array.isArray(source.selected_courses)
-          ? (source.selected_courses as SelectedCourse[])
-          : [],
+    id: coerceString(source.id ?? source.schedule_id, `result-${Date.now()}`),
+    selected_courses: selectedCourses,
     score: {
       total_score: coerceNumber(scoreSource.total_score, 0),
       credit_match_score: coerceNumber(scoreSource.credit_match_score, 0),
@@ -216,7 +267,10 @@ function normalizeTaskStatus(value: unknown): SchedulingTaskStatus {
 }
 
 function normalizeStatusResponse(value: unknown): SchedulingTaskStatusResponse {
-  const source = unwrapData<UnknownRecord>(value, ['data', 'result']) ?? {};
+  // 🔧 P0 修复：任务信封是扁的（{success, task_id, status, result}）。
+  // 不能把 'result' 放进 unwrap keys，否则当 result 非空时会直接陷入
+  // result 对象，丢掉 task_id / status，使状态永远被读为 idle。
+  const source = unwrapData<UnknownRecord>(value, ['data']) ?? {};
   const result = normalizeScheduleResult(source.result);
   return {
     task_id: coerceString(source.task_id ?? source.taskId, ''),
@@ -237,10 +291,16 @@ function normalizeStatusResponse(value: unknown): SchedulingTaskStatusResponse {
 }
 
 function normalizeTaskResultResponse(value: unknown): SchedulingTaskResultResponse {
-  const source = unwrapData<UnknownRecord>(value, ['data', 'result']) ?? {};
+  // 🔧 P0 修复：同 normalizeStatusResponse，只剥 'data' 信封。
+  const source = unwrapData<UnknownRecord>(value, ['data']) ?? {};
+  // 既不能在 result 为 null 时回退到整个信封（会构造出空假结果），
+  // 也要兼容旧后端直接返回排课结果本体的情况。
+  const hasResultField = 'result' in source;
+  const looksLikeResult = 'selected_courses' in source || 'score' in source;
+  const resultSource = hasResultField ? source.result : looksLikeResult ? source : null;
   return {
     task_id: coerceString(source.task_id ?? source.taskId, ''),
-    result: normalizeScheduleResult(source.result ?? source),
+    result: resultSource != null ? normalizeScheduleResult(resultSource) : null,
   };
 }
 
@@ -298,7 +358,14 @@ export async function loadCourses(file: File): Promise<LoadCoursesResponse> {
     },
   });
 
-  return response.data;
+  // 🔧 P1 修复：后端失败时仍返回 HTTP 200 + success:false。
+  // 不在这里抛错的话，页面会把失败当成“导入成功”结美展示。
+  const payload = response.data;
+  if (payload && payload.success === false) {
+    throw new Error(payload.message || '课程表导入失败');
+  }
+
+  return payload;
 }
 
 export async function getCourses(): Promise<Course[]> {
@@ -388,6 +455,14 @@ export async function importSelectedCourses(file: File): Promise<SelectedCourse[
     },
   });
 
+  // 🔧 P1 修复：同 loadCourses，后端失败也是 HTTP 200 + success:false。
+  const body = response.data as UnknownRecord | undefined;
+  if (body && body.success === false) {
+    throw new Error(
+      coerceString(body.message ?? body.error, '') || '已选课程导入失败',
+    );
+  }
+
   const direct = extractArray<SelectedCourse>(response.data, ['courses']);
   if (direct.length > 0) {
     return direct;
@@ -442,22 +517,19 @@ export async function createSchedulingTask(
       () => apiClient.post('/api/scheduling/tasks', request),
     ],
     (value) => {
-      const source = unwrapData<UnknownRecord>(value, ['data', 'result']) ?? {};
-      const result = normalizeScheduleResult(source.result ?? source);
+      // 🔧 P0 修复：只剥 'data' 信封。把 'result' 放进 unwrap keys 会在
+      // 后端同步返回结果时直接陷入 result，丢掉 task_id / status。
+      const source = unwrapData<UnknownRecord>(value, ['data']) ?? {};
       const taskId = coerceString(source.task_id ?? source.taskId, '');
-
-      if (result) {
-        return {
-          task_id: taskId || `sync-${Date.now()}`,
-          status: 'completed',
-          message: coerceString(source.message ?? '排课完成'),
-          percent: 100,
-          result,
-          mode: 'sync',
-          source: 'sync',
-          updated_at: coerceString(source.timestamp, new Date().toISOString()),
-        };
-      }
+      // 只能从 source.result 提取结果；兼容旧后端直接返回结果本体。
+      // 之前的 `source.result ?? source` 会在异步响应（result: null）时
+      // 回退到整个信封，构造出一个空的假结果，
+      // 导致任务刚提交就被判定为 completed 且不再轮询。
+      const hasResultField = 'result' in source;
+      const looksLikeResult = !taskId && ('selected_courses' in source || 'score' in source);
+      const resultSource = hasResultField ? source.result : looksLikeResult ? source : null;
+      const result = resultSource != null ? normalizeScheduleResult(resultSource) : null;
+      const rawStatus = normalizeTaskStatus(source.status ?? (taskId ? 'pending' : 'idle'));
 
       if (source.success === false) {
         return {
@@ -470,12 +542,27 @@ export async function createSchedulingTask(
         };
       }
 
+      // 同步完成：仅当后端真的返回了 result 且没有异步 task_id，
+      // 或者显式报告了 completed 状态时，才能标记为完成。
+      if (result && (!taskId || rawStatus === 'completed')) {
+        return {
+          task_id: taskId || `sync-${Date.now()}`,
+          status: 'completed',
+          message: coerceString(source.message ?? '排课完成'),
+          percent: 100,
+          result,
+          mode: taskId ? 'async' : 'sync',
+          source: taskId ? 'fallback' : 'sync',
+          updated_at: coerceString(source.timestamp, new Date().toISOString()),
+        };
+      }
+
       return {
         task_id: taskId || `task-${Date.now()}`,
-        status: normalizeTaskStatus(source.status ?? 'pending'),
+        status: rawStatus,
         message: coerceString(source.message ?? '排课任务已创建'),
         percent: source.percent !== undefined ? coerceNumber(source.percent, 0) : undefined,
-        result: source.result ? result : null,
+        result,
         mode: taskId ? 'async' : 'sync',
         source: taskId ? 'fallback' : 'sync',
         updated_at: coerceString(source.timestamp, new Date().toISOString()),

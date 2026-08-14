@@ -16,6 +16,7 @@ from core.services.course_supplement_service import CourseSupplementService
 from ..dependencies import get_web_session
 from ..models.dto import ApiResponse
 from ..state import WebSessionContext
+from ..uploads import read_upload_bytes
 
 router = APIRouter(tags=["supplement"])
 
@@ -34,14 +35,27 @@ async def run_supplement_test(
     session.artifacts_dir.mkdir(parents=True, exist_ok=True)
     token = _timestamp_token()
 
-    schedule_suffix = Path(schedule_result_file.filename or "schedule_result.xlsx").suffix or ".xlsx"
+    schedule_suffix = Path(
+        schedule_result_file.filename or "schedule_result.xlsx"
+    ).suffix.lower() or ".xlsx"
+    if schedule_suffix not in {".xls", ".xlsx"}:
+        raise HTTPException(status_code=400, detail="排课结果必须是 Excel 文件")
     schedule_path = session.artifacts_dir / f"supplement_schedule_input_{token}{schedule_suffix}"
-    schedule_path.write_bytes(await schedule_result_file.read())
+    schedule_path.write_bytes(await read_upload_bytes(schedule_result_file))
 
     if course_list_file is not None:
-        course_suffix = Path(course_list_file.filename or "course_catalog.xlsx").suffix or ".xlsx"
+        course_suffix = Path(
+            course_list_file.filename or "course_catalog.xlsx"
+        ).suffix.lower() or ".xlsx"
+        if course_suffix not in {".xls", ".xlsx"}:
+            schedule_path.unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail="备选课程表必须是 Excel 文件")
         course_path = session.artifacts_dir / f"supplement_course_catalog_{token}{course_suffix}"
-        course_path.write_bytes(await course_list_file.read())
+        try:
+            course_path.write_bytes(await read_upload_bytes(course_list_file))
+        except Exception:
+            schedule_path.unlink(missing_ok=True)
+            raise
         course_source = "uploaded"
     else:
         if not session.loaded_course_file:
