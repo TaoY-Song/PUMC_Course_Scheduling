@@ -149,16 +149,19 @@ class ConstraintChecker:
     def _check_period_campus_conflicts(
         self, weekday: int, day_courses: List
     ) -> List[ConflictInfo]:
-        """检查跨校区转场时间是否足够（考虑周次重叠）
+        """同一半天时段内不得跨校区（考虑周次重叠）。
 
-        🔧 P0 修复：之前本方法使用硬编码时段 (1-4, 5-8, 9-10)，
-        完全忽略 config.min_campus_transfer_time，导致 UI 上的
-        “校区转换时间”控件改了也不生效。
-        现在改为基于实际节次间隔判定：同一天、周次重叠、不同校区的
-        两门课，若间隔节数 < min_campus_transfer_time 则为冲突。
+        转场能不能赶上，取决于两节课之间有没有午休 / 晚饭，
+        而不是隔了几节。节次编号是等距整数，表达不了这个断点：
+
+        * 1-2 节 → 3-4 节：课间 10 分铟，同属上午 → 赶不到
+        * 3-4 节 → 5-6 节：隔着午休，上午→下午 → 赶得到
+        * 7-8 节 → 9-10 节：隔着晚饭，下午→晚上 → 赶得到
+
+        三种情况的“空出节数”都是 0，所以改用 config.half_day_blocks
+        判定是否同块；同块且跨校区即为冲突。
         """
         conflicts = []
-        min_gap = self.config.min_campus_transfer_time
 
         for i in range(len(day_courses)):
             for j in range(i + 1, len(day_courses)):
@@ -174,17 +177,15 @@ class ConstraintChecker:
                 if not weeks_overlap:
                     continue
 
-                # 计算两个时间段之间的空闲节数
-                if slot1.start_section <= slot2.start_section:
-                    earlier, later = slot1, slot2
-                else:
-                    earlier, later = slot2, slot1
-
-                # 直接重叠（时间冲突）由 check_time_conflicts 负责，
-                # 这里只处理跨校区转场时间不足。
-                gap = later.start_section - earlier.end_section - 1
-                if gap >= min_gap:
-                    continue
+                blocks1 = self.config.blocks_for_range(
+                    slot1.start_section, slot1.end_section
+                )
+                blocks2 = self.config.blocks_for_range(
+                    slot2.start_section, slot2.end_section
+                )
+                shared_blocks = blocks1 & blocks2
+                if not shared_blocks:
+                    continue  # 跳块 → 有午休/晚饭可用于转场
 
                 overlap_weeks = sorted(weeks_overlap)
                 weeks_str = (
@@ -192,16 +193,21 @@ class ConstraintChecker:
                     if len(overlap_weeks) > 1
                     else f"{overlap_weeks[0]}周"
                 )
+                block_str = "、".join(sorted(shared_blocks))
 
                 conflict = ConflictInfo(
                     conflict_type="campus",
                     course1=course1.course,
                     course2=course2.course,
                     description=(
-                        f"校区转场时间不足：{course1.course.campus} -> {course2.course.campus}"
-                        f"（间隔 {gap} 节，需要 {min_gap} 节，{weeks_str}）"
+                        f"同一时段跨校区：{course1.course.campus} -> {course2.course.campus}"
+                        f"（均在{block_str}，第{slot1.start_section}-{slot1.end_section}节 与 "
+                        f"第{slot2.start_section}-{slot2.end_section}节，{weeks_str}）"
                     ),
-                    severity="medium",
+                    # 搜索阶段就把它当硬约束拒掉（engine._is_campus_compatible）。
+                    # 此处必须同为 high，否则 check_all_hard_constraints 只统计
+                    # high，会把一个真实的跨校区冲突当成“有效方案”放过。
+                    severity="high",
                 )
                 conflicts.append(conflict)
 

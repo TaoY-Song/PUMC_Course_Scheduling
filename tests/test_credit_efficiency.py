@@ -93,28 +93,88 @@ def test_completed_plus_new_credits_reach_the_requirement(credit_manager, make_c
 
 
 @pytest.mark.parametrize(
-    "ratio,candidate_credits,expected",
+    "overflow,candidate_credits,expected",
     [
-        (0.0, 3.0, False),  # 2 selected + 3 = 5 > gap 4, no allowance
-        (0.5, 3.0, True),   # limit becomes 4 + 2 = 6
-        (0.0, 2.0, True),   # exactly fills the gap
+        (0.0, 3.0, False),  # 已选 2 + 3 = 5 > 缺口 4，无溢出额度
+        (2.0, 3.0, True),   # 上限变为 4 + 2 = 6
+        (0.0, 2.0, True),   # 刚好填满缺口
     ],
 )
-def test_overflow_ratio_controls_the_limit(
-    credit_manager, make_course, ratio, candidate_credits, expected
+def test_overflow_limit_is_a_fixed_credit_amount(
+    credit_manager, make_course, overflow, candidate_credits, expected
 ):
-    """P0-4c: the limit used to be a hardcoded +1 credit, ignoring config."""
+    """溢出上限是固定学分数，不是比例。
+
+    比例制在小缺口上张不开：限选要求 1.0、ratio=0.2 时上限只 1.2，
+    连一门 1.5 分的课都收不下；而培养方案只写下限、无上限。
+    """
     cm = credit_manager(required=4.0)
     engine = _bare_engine(
-        SchedulingConfig(max_credit_overflow_ratio=ratio, allow_credit_overflow=True), cm
+        SchedulingConfig(max_credit_overflow=overflow, allow_credit_overflow=True), cm
     )
     selected = [make_course("A"), make_course("B", weekday=2)]  # 2 credits
 
     allowed = engine._should_add_course_for_credit_efficiency(
-        make_course("CAND", credits=candidate_credits), selected, {ELECTIVE: 4.0}
+        make_course("CAND", credits=candidate_credits),
+        selected,
+        {ELECTIVE: 4.0},
     )
 
     assert allowed is expected
+
+
+def test_empty_category_is_rescued_when_no_smaller_option_exists(
+    credit_manager, make_course
+):
+    """该类一门未选且无替代时，允许突破溢出上限。
+
+    真实案例：限制性选修要求 >=1.0，本学期唯一开的那门是 1.5 分。
+    拒掉会使该类 0 学分——比溢出 0.5 分更不合培养方案（只规定下限）。
+    """
+    cm = credit_manager(required=1.0)
+    engine = _bare_engine(
+        SchedulingConfig(max_credit_overflow=0.0, rescue_empty_category=True), cm
+    )
+    only_option = make_course("ONLY", credits=1.5)
+
+    allowed = engine._should_add_course_for_credit_efficiency(
+        only_option, [], {ELECTIVE: 1.0}, category_pool=[only_option]
+    )
+
+    assert allowed is True
+
+
+def test_rescue_does_not_fire_when_a_smaller_option_fits(credit_manager, make_course):
+    """救场不得滥用：同类里有不超上限的课时，超限的仍应拒绝。
+
+    否则回溯从空集开始时会直接放过大课，把正常的小课挤掉。
+    """
+    cm = credit_manager(required=2.0)
+    engine = _bare_engine(
+        SchedulingConfig(max_credit_overflow=0.5, rescue_empty_category=True), cm
+    )
+    too_big = make_course("BIG", credits=3.0)
+    fits = make_course("FIT", credits=1.0, weekday=2)
+
+    allowed = engine._should_add_course_for_credit_efficiency(
+        too_big, [], {ELECTIVE: 2.0}, category_pool=[too_big, fits]
+    )
+
+    assert allowed is False
+
+
+def test_rescue_can_be_disabled(credit_manager, make_course):
+    cm = credit_manager(required=1.0)
+    engine = _bare_engine(
+        SchedulingConfig(max_credit_overflow=0.0, rescue_empty_category=False), cm
+    )
+    only_option = make_course("ONLY", credits=1.5)
+
+    allowed = engine._should_add_course_for_credit_efficiency(
+        only_option, [], {ELECTIVE: 1.0}, category_pool=[only_option]
+    )
+
+    assert allowed is False
 
 
 def test_disallowing_overflow_forbids_exceeding_the_gap(credit_manager, make_course):

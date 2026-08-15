@@ -1,8 +1,9 @@
-import { ChangeEvent, useEffect, useRef, useState } from 'react';
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CalendarPlus,
   Check,
   Clock3,
+  CornerDownLeft,
   FolderInput,
   Layers3,
   Lock,
@@ -11,11 +12,13 @@ import {
   Sparkles,
   Trash2,
   Upload,
+  X,
 } from 'lucide-react';
 import { Modal } from '../components/workbench/Modal';
 import { MetricCard, Pill, Surface } from '../components/workbench/atoms';
 import { TimeSlotEditor } from '../components/course/TimeSlotEditor';
 import { getCategoryOptions, getCategoryShortLabel, isCategoryUnset } from '../lib/categories';
+import { fuzzySearch, splitHighlight, type FuzzyField } from '../lib/fuzzySearch';
 import {
   addSelectedCourse,
   addTimeSlot,
@@ -47,6 +50,11 @@ export function CoursesPage() {
   const [timeSlotModalOpen, setTimeSlotModalOpen] = useState(false);
   const [editingTimeSlotIndex, setEditingTimeSlotIndex] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<{ tone: FeedbackTone; message: string } | null>(null);
+  // 搜索预览下拉：聚焦且有输入时展开，支持 ↑↓ 选中、Enter 加入、Esc 关闭
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewIndex, setPreviewIndex] = useState(0);
+
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   const courseFileInputRef = useRef<HTMLInputElement | null>(null);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -64,19 +72,28 @@ export function CoursesPage() {
     isCategoryUnset(course.custom_category),
   );
 
-  const filteredCourses = courses.filter((course) => {
-    const query = search.trim().toLowerCase();
-    if (!query) {
-      return true;
-    }
+  // 搜索字段权重：编码/课名是用户的主要检索入口，教师次之，
+  // 类别最弱——否则搜「选修」会把上百门同类别课程一起顶到前面。
+  const courseFields = (course: Course): FuzzyField[] => [
+    { key: 'code', value: course.course_code, weight: 1.2 },
+    { key: 'name', value: course.course_name, weight: 1.5 },
+    { key: 'teacher', value: course.teacher ?? '', weight: 0.8 },
+    { key: 'category', value: course.category ?? '', weight: 0.4 },
+  ];
 
-    return (
-      course.course_code.toLowerCase().includes(query)
-      || course.course_name.toLowerCase().includes(query)
-      || (course.teacher ?? '').toLowerCase().includes(query)
-      || (course.category ?? '').toLowerCase().includes(query)
-    );
-  });
+  const matches = useMemo(
+    () => fuzzySearch(courses, search, courseFields),
+    [courses, search],
+  );
+  const filteredCourses = useMemo(() => matches.map((match) => match.item), [matches]);
+  const highlightFor = useMemo(() => {
+    const map = new Map<string, Record<string, number[]>>();
+    for (const match of matches) {
+      map.set(`${match.item.course_code}-${match.item.class_index}`, match.highlights);
+    }
+    return map;
+  }, [matches]);
+  const previewMatches = useMemo(() => matches.slice(0, 8), [matches]);
 
   const refreshSelectedAndCredits = async (nextSelectedCourseId?: string | null) => {
     const [selected, credits] = await Promise.all([
@@ -282,7 +299,10 @@ export function CoursesPage() {
     }
   };
 
-  const handleSaveTimeSlot = async (timeSlot: TimeSlot) => {
+  const handleSaveTimeSlot = async (
+    timeSlot: TimeSlot,
+    options: { exceptionOf: number | null },
+  ) => {
     if (!selectedCourse) {
       return;
     }
@@ -291,6 +311,28 @@ export function CoursesPage() {
     try {
       if (editingTimeSlotIndex === null) {
         await addTimeSlot(selectedCourse.id, timeSlot);
+
+        // 例外周：把这几周从常规时间段里扣掉。
+        // 一门课同一周不会既在上午又在晚上；不扣会让两个时段
+        // 同时占着同一周，冲突检测会误报。
+        // 先加例外再扣常规：若后一步失败，用户看到的是“多了一段”
+        // （可见、可手改），而不是“周次悉数丢失”。
+        if (options.exceptionOf !== null) {
+          const base = selectedCourse.time_slots[options.exceptionOf];
+          if (base) {
+            const exceptionWeeks = new Set(timeSlot.weeks);
+            const remaining = base.weeks.filter((week) => !exceptionWeeks.has(week));
+            if (remaining.length > 0) {
+              await updateTimeSlot(selectedCourse.id, options.exceptionOf, {
+                ...base,
+                weeks: remaining,
+              });
+            } else {
+              // 常规段被整段替换，直接删掉，不留一个空周次的死段
+              await deleteTimeSlot(selectedCourse.id, options.exceptionOf);
+            }
+          }
+        }
       } else {
         await updateTimeSlot(selectedCourse.id, editingTimeSlotIndex, timeSlot);
       }
@@ -298,7 +340,12 @@ export function CoursesPage() {
       await refreshSelectedAndCredits(selectedCourse.id);
       setFeedback({
         tone: 'success',
-        message: editingTimeSlotIndex === null ? '时间段已添加。' : '时间段已更新。',
+        message:
+          editingTimeSlotIndex !== null
+            ? '时间段已更新。'
+            : options.exceptionOf !== null
+              ? '例外周已添加，常规时间段已自动扣除这几周。'
+              : '时间段已添加。',
       });
       setTimeSlotModalOpen(false);
       setEditingTimeSlotIndex(null);
@@ -430,21 +477,189 @@ export function CoursesPage() {
                 <span className="tag tag-gray shrink-0">CATALOG</span>
               </div>
 
-              {/* Search */}
-              <div className="mb-3 flex items-center gap-2 rounded-lg border px-3 py-2"
-                   style={{ borderColor: 'var(--border-card)', background: 'var(--bg-sidebar)' }}>
-                <Search className="h-4 w-4 shrink-0" style={{ color: 'var(--text-on-dark-muted)' }} />
-                <input
-                  aria-label="搜索课程"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="搜索编码、名称、教师或类别"
-                  className="w-full bg-transparent text-sm text-white outline-none placeholder:opacity-50"
-                />
-                <span className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px]"
-                      style={{ background: 'rgba(255,255,255,0.15)', color: 'var(--text-on-dark-muted)' }}>
-                  {filteredCourses.length}
-                </span>
+              {/* Search — 亮底浅色输入，光标与占位文字必须可见 */}
+              <div className="relative mb-3">
+                <div
+                  className="flex items-center gap-2 rounded-lg border px-3 py-2 transition-colors"
+                  style={{
+                    borderColor: previewOpen ? 'var(--accent-ui)' : 'var(--border-base)',
+                    background: 'var(--bg-card)',
+                  }}
+                >
+                  <Search className="h-4 w-4 shrink-0" style={{ color: 'var(--text-muted)' }} />
+                  <input
+                    ref={searchInputRef}
+                    aria-label="搜索课程"
+                    role="combobox"
+                    aria-expanded={previewOpen}
+                    aria-controls="course-search-preview"
+                    aria-autocomplete="list"
+                    value={search}
+                    onChange={(e) => {
+                      setSearch(e.target.value);
+                      setPreviewOpen(e.target.value.trim().length > 0);
+                      setPreviewIndex(0);
+                    }}
+                    onFocus={() => setPreviewOpen(search.trim().length > 0)}
+                    // 用 blur 延迟关闭，否则点击下拉项时 blur 先触发、点击丢失
+                    onBlur={() => window.setTimeout(() => setPreviewOpen(false), 120)}
+                    onKeyDown={(e) => {
+                      if (!previewOpen || previewMatches.length === 0) {
+                        if (e.key === 'Escape') setSearch('');
+                        return;
+                      }
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setPreviewIndex((i) => (i + 1) % previewMatches.length);
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setPreviewIndex((i) => (i - 1 + previewMatches.length) % previewMatches.length);
+                      } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const target = previewMatches[previewIndex]?.item;
+                        if (target) {
+                          const already = selectedCourses.some(
+                            (s) =>
+                              s.course.course_code === target.course_code
+                              && s.class_index === target.class_index,
+                          );
+                          if (!already) {
+                            handleAddCourse(target).catch(() => undefined);
+                          }
+                        }
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setPreviewOpen(false);
+                      }
+                    }}
+                    placeholder="搜索编码、名称、教师或类别（支持多关键词，空格分隔）"
+                    className="w-full bg-transparent text-sm outline-none"
+                    style={{ color: 'var(--text-primary)', caretColor: 'var(--accent-ui)' }}
+                  />
+                  {search && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearch('');
+                        setPreviewOpen(false);
+                        searchInputRef.current?.focus();
+                      }}
+                      aria-label="清除搜索"
+                      className="shrink-0 rounded p-0.5 transition-opacity hover:opacity-100"
+                      style={{ color: 'var(--text-muted)', opacity: 0.6 }}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  <span
+                    className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
+                    style={{ background: 'var(--bg-base)', color: 'var(--text-muted)' }}
+                  >
+                    {filteredCourses.length}
+                  </span>
+                </div>
+
+                {/* 实时预览：命中片段高亮，Enter 直接加入 */}
+                {previewOpen && previewMatches.length > 0 && (
+                  <div
+                    id="course-search-preview"
+                    role="listbox"
+                    className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-lg border shadow-lg"
+                    style={{ borderColor: 'var(--border-card)', background: 'var(--bg-card)' }}
+                  >
+                    {previewMatches.map((match, index) => {
+                      const course = match.item;
+                      const key = `${course.course_code}-${course.class_index}`;
+                      const active = index === previewIndex;
+                      const already = selectedCourses.some(
+                        (s) =>
+                          s.course.course_code === course.course_code
+                          && s.class_index === course.class_index,
+                      );
+                      const renderHighlighted = (value: string, field: string) =>
+                        splitHighlight(value, match.highlights[field]).map((segment, i) =>
+                          segment.hit ? (
+                            <mark
+                              key={i}
+                              style={{
+                                background: 'var(--accent-light)',
+                                color: 'var(--accent-dark)',
+                                borderRadius: '2px',
+                                padding: '0 1px',
+                              }}
+                            >
+                              {segment.text}
+                            </mark>
+                          ) : (
+                            <span key={i}>{segment.text}</span>
+                          ),
+                        );
+
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          role="option"
+                          aria-selected={active}
+                          disabled={already}
+                          onMouseEnter={() => setPreviewIndex(index)}
+                          onClick={() => {
+                            if (!already) {
+                              handleAddCourse(course).catch(() => undefined);
+                            }
+                          }}
+                          className="flex w-full items-center justify-between gap-3 border-b px-3 py-2 text-left last:border-b-0 transition-colors"
+                          style={{
+                            borderColor: 'var(--border-subtle)',
+                            background: active ? 'var(--bg-base)' : 'transparent',
+                            opacity: already ? 0.5 : 1,
+                            cursor: already ? 'not-allowed' : 'pointer',
+                          }}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm" style={{ color: 'var(--text-primary)' }}>
+                              {renderHighlighted(course.course_name, 'name')}
+                            </p>
+                            <p
+                              className="mt-0.5 truncate font-mono text-[11px]"
+                              style={{ color: 'var(--text-muted)' }}
+                            >
+                              {renderHighlighted(course.course_code, 'code')}
+                              {' · 班次 '}
+                              {course.class_index}
+                              {course.teacher ? ' · ' : ''}
+                              {course.teacher ? renderHighlighted(course.teacher, 'teacher') : null}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                              {course.credits} 分
+                            </span>
+                            {already ? (
+                              <Pill tone="neutral">已选</Pill>
+                            ) : active ? (
+                              <span
+                                className="flex items-center gap-1 text-[10px]"
+                                style={{ color: 'var(--accent-ui)' }}
+                              >
+                                <CornerDownLeft className="h-3 w-3" />
+                                加入
+                              </span>
+                            ) : null}
+                          </div>
+                        </button>
+                      );
+                    })}
+                    {matches.length > previewMatches.length && (
+                      <div
+                        className="px-3 py-1.5 text-center text-[10px]"
+                        style={{ background: 'var(--bg-base)', color: 'var(--text-muted)' }}
+                      >
+                        另有 {matches.length - previewMatches.length} 条匹配，见下方列表
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {courses.length === 0 ? (
@@ -479,18 +694,39 @@ export function CoursesPage() {
                               s.course.course_code === course.course_code &&
                               s.class_index === course.class_index,
                           );
+                          // 让表格里的命中片段与预览下拉保持一致的高亮
+                          const rowHighlights =
+                            highlightFor.get(`${course.course_code}-${course.class_index}`) ?? {};
+                          const mark = (value: string, field: string) =>
+                            splitHighlight(value, rowHighlights[field]).map((segment, i) =>
+                              segment.hit ? (
+                                <mark
+                                  key={i}
+                                  style={{
+                                    background: 'var(--accent-light)',
+                                    color: 'var(--accent-dark)',
+                                    borderRadius: '2px',
+                                    padding: '0 1px',
+                                  }}
+                                >
+                                  {segment.text}
+                                </mark>
+                              ) : (
+                                <span key={i}>{segment.text}</span>
+                              ),
+                            );
                           return (
                             <tr key={`${course.course_code}-${course.class_index}`}>
                               <td>
                                 <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                                  {course.course_name}
+                                  {mark(course.course_name, 'name')}
                                 </p>
                                 <p className="mt-0.5 font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                                  {course.course_code} · 班次 {course.class_index}
+                                  {mark(course.course_code, 'code')} · 班次 {course.class_index}
                                 </p>
                               </td>
                               <td className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                                <p>{course.teacher || '待定'}</p>
+                                <p>{course.teacher ? mark(course.teacher, 'teacher') : '待定'}</p>
                                 <p className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
                                   {course.campus || '—'}
                                 </p>
@@ -806,6 +1042,8 @@ export function CoursesPage() {
       >
         <TimeSlotEditor
           initialValue={editingSlot}
+          siblingSlots={selectedCourse?.time_slots ?? []}
+          editingIndex={editingTimeSlotIndex}
           onSave={handleSaveTimeSlot}
           onCancel={() => { setTimeSlotModalOpen(false); setEditingTimeSlotIndex(null); }}
         />

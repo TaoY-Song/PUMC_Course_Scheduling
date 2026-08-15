@@ -39,9 +39,7 @@ const DEFAULT_CONFIG: SchedulingConfig = {
   campus_conflict_mode: 'DAILY',
   max_solutions: 1,
   time_limit: 60,
-  credit_overflow_ratio: 0.1,
-  // 单位：节次（与后端 min_campus_transfer_time 一致）
-  campus_transition_time: 2,
+  credit_overflow: 1.0,
 };
 
 function sameConfig(left: SchedulingConfig, right: SchedulingConfig) {
@@ -50,8 +48,7 @@ function sameConfig(left: SchedulingConfig, right: SchedulingConfig) {
     left.campus_conflict_mode === right.campus_conflict_mode &&
     left.max_solutions === right.max_solutions &&
     left.time_limit === right.time_limit &&
-    left.credit_overflow_ratio === right.credit_overflow_ratio &&
-    left.campus_transition_time === right.campus_transition_time
+    left.credit_overflow === right.credit_overflow
   );
 }
 

@@ -96,11 +96,16 @@ class CourseDataLoader:
         df = df.copy()
 
         # 为缺失的列添加默认值
+        # 注意：课程类别留空字符串，不能编造 "选修课"。
+        # 填 "选修课" 会命中 _auto_assign_category 的 "选修" 分支，
+        # 把课静默归入「选修课 - 学位选修」——公共必修课的学分会被
+        # 算进学位选修桶，而 UI 显示为已设置好，用户无从发现。
+        # 留空则走 "nan" 分支，正常呈现为「类别待设置」等用户手选。
         defaults = {
             "课程编码": "UNKNOWN",
             "课程名称": "未知课程",
             "开课院系": "未知院系",
-            "课程类别": "选修课",
+            "课程类别": "",
             "班次": 1,
             "校区": "校本部",
             "任课教师": "待定",
@@ -245,16 +250,26 @@ class CourseDataLoader:
     def _parse_weeks(value: Any) -> List[int]:
         if CourseDataLoader._is_empty(value):
             return []
+        # 教务导出常带“第…周”包裹（如「第2-18周」）。不剔的话
+        # 整个表达式都匹配不上，静默返回空周次——课变成没时间。
+        text = str(value).strip()
+        text = re.sub(r"^第", "", text)
+        text = re.sub(r"周(次)?$", "", text)
         weeks = set()
-        for part in re.split(r"[,，、;；\s]+", str(value).strip()):
+        for part in re.split(r"[,，、;；\s]+", text.strip()):
             if not part:
                 continue
-            match = re.fullmatch(r"(\d+)\s*[-~—–至]\s*(\d+)", part)
+            # 单个区间也可能自带包裹（如「1-8周,10周」）
+            piece = re.sub(r"^第", "", part)
+            piece = re.sub(r"周(次)?$", "", piece).strip()
+            if not piece:
+                continue
+            match = re.fullmatch(r"(\d+)\s*[-~—–至]\s*(\d+)", piece)
             if match:
                 start, end = map(int, match.groups())
                 weeks.update(range(min(start, end), max(start, end) + 1))
-            elif part.isdigit():
-                weeks.add(int(part))
+            elif piece.isdigit():
+                weeks.add(int(piece))
         return sorted(week for week in weeks if week > 0)
 
     def _generate_load_report(self, total_records: int, failed_count: int):

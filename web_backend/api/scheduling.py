@@ -54,8 +54,7 @@ def _to_config_dto(config: SchedulingConfig) -> SchedulingConfigDTO:
         campus_conflict_mode=CampusConflictModeDTO(config.campus_conflict_mode.value.upper()),
         max_solutions=min(config.max_solutions, 10),
         time_limit=config.max_solve_time_seconds,
-        credit_overflow_ratio=config.max_credit_overflow_ratio,
-        campus_transition_time=config.min_campus_transfer_time,
+        credit_overflow=config.max_credit_overflow,
     )
 
 
@@ -164,8 +163,7 @@ async def configure_scheduling(
         campus_conflict_mode=campus_mode,
         max_solutions=config_dto.max_solutions,
         max_solve_time_seconds=config_dto.time_limit,
-        max_credit_overflow_ratio=config_dto.credit_overflow_ratio,
-        min_campus_transfer_time=config_dto.campus_transition_time,
+        max_credit_overflow=config_dto.credit_overflow,
     )
     scheduling_service.configure(session.scheduling_config)
 

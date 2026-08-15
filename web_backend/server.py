@@ -51,7 +51,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title="PUMC 智能排课系统 - Web API",
     description="PUMC 课程排课系统的 Web API",
-    version="1.0.0",
+    version="3.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
@@ -87,12 +87,12 @@ async def root():
     index_file = static_path / "index.html"
     if index_file.exists():
         return FileResponse(str(index_file))
-    return {"message": "PUMC 智能排课系统 Web API", "docs": "/docs", "version": "1.0.0"}
+    return {"message": "PUMC 智能排课系统 Web API", "docs": "/docs", "version": "3.0.0"}
 
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "healthy", "version": "1.0.0"}
+    return {"status": "healthy", "version": "3.0.0"}
 
 
 @app.get("/{full_path:path}")

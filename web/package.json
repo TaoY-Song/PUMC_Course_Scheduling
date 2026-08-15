@@ -1,6 +1,6 @@
 {
   "name": "pumc-scheduling-web",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "description": "PUMC智能排课系统 - Web前端",
   "type": "module",
   "scripts": {

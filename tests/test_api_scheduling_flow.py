@@ -51,8 +51,7 @@ def test_scheduling_config_roundtrip(client):
         "campus_conflict_mode": "PERIOD",
         "max_solutions": 3,
         "time_limit": 45,
-        "credit_overflow_ratio": 0.2,
-        "campus_transition_time": 3,
+        "credit_overflow": 2.0,
     }
 
     posted = client.post("/api/scheduling/config", json=payload)
@@ -64,25 +63,34 @@ def test_scheduling_config_roundtrip(client):
     body = fetched.json()
     assert body["max_solutions"] == 3
     assert body["time_limit"] == 45
-    assert body["credit_overflow_ratio"] == pytest.approx(0.2)
-    assert body["campus_transition_time"] == 3
+    assert body["credit_overflow"] == pytest.approx(2.0)
     assert body["campus_conflict_mode"] == "PERIOD"
 
 
-def test_campus_transition_time_rejects_minute_scale_values(client):
-    """The field is sections now; 30 sections is out of range."""
+def test_period_mode_survives_config_roundtrip(client):
+    """PERIOD 按半天时段分块判定，没有可调阈值需要回传。
+
+    旧接口有个 campus_transition_time（“隔几节”），但那个语义
+        gap = 后一门.start - 前一门.end - 1
+    对 1-2→3-4（课间）与 3-4→5-6（午休）算出来都是 0，
+    无法区分“赶不上”和“赶得上”，所以已删除。
+    客户端就算多传该字段也不应 500。
+    """
     payload = {
         "credit_constraint_mode": "OPTIMAL",
         "campus_conflict_mode": "PERIOD",
         "max_solutions": 1,
         "time_limit": 60,
-        "credit_overflow_ratio": 0.1,
-        "campus_transition_time": 30,
+        "credit_overflow": 1.0,
+        "campus_transition_time": 30,  # 已废弃字段，应被忽略
     }
 
     response = client.post("/api/scheduling/config", json=payload)
 
-    assert response.status_code == 422
+    assert response.status_code == 200, response.text
+    body = client.get("/api/scheduling/config").json()
+    assert body["campus_conflict_mode"] == "PERIOD"
+    assert "campus_transition_time" not in body
 
 
 def test_execute_without_courses_reports_failure_not_success(client):

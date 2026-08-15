@@ -43,7 +43,7 @@ def configure_logging(force: bool = False) -> None:
     root = logging.getLogger("pumc")
     root.setLevel(_resolve_level())
 
-    # 避免重复添加 handler（例如 Qt 版和 Web 版在同进程内都初始化过）
+    # 避免重复添加 handler（多次初始化时）
     if not root.handlers or force:
         root.handlers.clear()
         handler = logging.StreamHandler(sys.stdout)

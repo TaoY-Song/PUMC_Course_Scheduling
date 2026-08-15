@@ -28,9 +28,7 @@ const DEFAULT_SCHEDULING_CONFIG: SchedulingConfig = {
   campus_conflict_mode: 'DAILY',
   max_solutions: 1,
   time_limit: 60,
-  credit_overflow_ratio: 0.1,
-  // 单位：节次（与后端 min_campus_transfer_time 一致）
-  campus_transition_time: 2,
+  credit_overflow: 1.0,
 };
 
 const SCHEDULING_WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';
@@ -215,13 +213,9 @@ function normalizeSchedulingConfig(value: unknown): SchedulingConfig {
           : 'DAILY',
     max_solutions: Math.max(1, coerceNumber(source.max_solutions, DEFAULT_SCHEDULING_CONFIG.max_solutions)),
     time_limit: Math.max(1, coerceNumber(source.time_limit, DEFAULT_SCHEDULING_CONFIG.time_limit)),
-    credit_overflow_ratio: Math.min(
-      1,
-      Math.max(0, coerceNumber(source.credit_overflow_ratio, DEFAULT_SCHEDULING_CONFIG.credit_overflow_ratio)),
-    ),
-    campus_transition_time: Math.max(
-      0,
-      coerceNumber(source.campus_transition_time, DEFAULT_SCHEDULING_CONFIG.campus_transition_time),
+    credit_overflow: Math.min(
+      10,
+      Math.max(0, coerceNumber(source.credit_overflow, DEFAULT_SCHEDULING_CONFIG.credit_overflow)),
     ),
   };
 }

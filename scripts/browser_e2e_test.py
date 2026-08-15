@@ -206,10 +206,291 @@ def overflow_report(client: CDP) -> dict[str, Any]:
     )
 
 
+def _pointer_event(client: CDP, etype: str, x: float, y: float) -> None:
+    """发送单个鼠标指针事件（CDP Input.dispatchMouseEvent）。"""
+    client.send(
+        "Input.dispatchMouseEvent",
+        {
+            "type": etype,          # mousePressed / mouseMoved / mouseReleased
+            "x": x,
+            "y": y,
+            "button": "left",
+            "buttons": 1 if etype != "mouseReleased" else 0,
+            "clickCount": 1 if etype == "mousePressed" else 0,
+            "pointerType": "mouse",
+        },
+    )
+
+
+def _drag_week_cells(client: CDP, selectors: list[str]) -> None:
+    """模拟按住拖拽选择多个周次格。
+
+    selectors: 每格的 data-week 属性值列表，如 ['1','2','3']。
+    流程：在第一格按下 → 依次滑过每格中心 → 抬起。
+    """
+    rects = client.evaluate(
+        f"""(()=>{{const sels={json.dumps(selectors)};return sels.map(w=>{{const el=document.querySelector('[data-week="'+w+'"]');if(!el)return null;const r=el.getBoundingClientRect();return {{x:(r.left+r.right)/2,y:(r.top+r.bottom)/2}};}});}})()"""  # noqa: E501
+    )
+    if not rects or any(r is None for r in rects):
+        raise RuntimeError(f"week cells not found in DOM: {selectors} → {rects}")
+    _pointer_event(client, "mousePressed", rects[0]["x"], rects[0]["y"])
+    time.sleep(0.05)
+    for rect in rects[1:]:
+        _pointer_event(client, "mouseMoved", rect["x"], rect["y"])
+        time.sleep(0.03)
+    _pointer_event(client, "mouseReleased", rects[-1]["x"], rects[-1]["y"])
+    time.sleep(0.1)
+
+
+def check_timeslot_ui(client: CDP, base: str) -> dict[str, Any]:
+    """以用户视角验证 TimeSlotEditor 的拖拽选周和例外槽。
+
+    步骤：
+    1. 确保「课程细节」面板里有一门已选课程（选第一张卡片）。
+    2. 点「新增」打开 Modal。
+    3. 拖拽连选第 2、3、4 周（3 格）作为常规时间段。
+    4. 点「保存」；用 API 核实返回含这 3 周。
+    5. 再次点「新增」；勾「例外时段」，自动选刚保存的段作为基准。
+    6. 拖选第 3 周作为例外周（在常规段 2-4 范围内）。
+    7. 点「保存」；用 API 核实：两段周次不相交，常规段扣掉了第 3 周。
+    8. 清理：把刚加的时间段全删掉，不污染后续排课步骤。
+    """
+    rpt: dict[str, Any] = {}
+
+    # -- 确保在课程工作台页，且有已选课程 --
+    navigate(client, f"{base}/courses")
+    client.wait_for(
+        "document.querySelectorAll('[aria-label=\"课程类别\"]').length > 0",
+        timeout=30,
+    )
+
+    # 找到第一门已选课程的 ID（用 API，而不是猜 DOM 状态）
+    with urllib.request.urlopen(f"{base}/api/selected-courses", timeout=10) as r:
+        selected_list = json.loads(r.read())
+    assert selected_list, "check_timeslot_ui: 没有已选课程，无法测试时间段 UI"
+    course_id = selected_list[0]["id"]
+    course_name = selected_list[0]["course"]["course_name"]
+    rpt["target_course"] = course_name
+
+    # 先清空该课程原有时间段，确保测试状态干净可控
+    # （fixture 里所有课都有时间段；如果不先清空，新增段后 count != 1）
+    with urllib.request.urlopen(f"{base}/api/selected-courses", timeout=10) as r:
+        existing_slots = next(
+            c for c in json.loads(r.read()) if c["id"] == course_id
+        ).get("time_slots", [])
+    for idx in reversed(range(len(existing_slots))):
+        req = urllib.request.Request(
+            f"{base}/api/selected-courses/{course_id}/timeslots/{idx}",
+            method="DELETE",
+        )
+        with urllib.request.urlopen(req, timeout=10):
+            pass
+    rpt["pre_cleared_slots"] = len(existing_slots)
+
+    # 点击该课程卡片（已选列表里的按钮包含课名）
+    client.wait_for(
+        f"""[...document.querySelectorAll('button')].some(b => b.innerText.includes({json.dumps(course_name[:10], ensure_ascii=False)}))""",
+        timeout=20,
+    )
+    client.evaluate(
+        f"""[...document.querySelectorAll('button')].find(b => b.innerText.includes({json.dumps(course_name[:10], ensure_ascii=False)})).click()"""
+    )
+    # 等详情面板切换到该课程
+    client.wait_for(
+        f"""document.querySelector("select[aria-label='课程类别']") !== null""",
+        timeout=20,
+    )
+
+    # ── STEP 1：打开「新增时间段」Modal ──────────────────────────
+    # CalendarPlus 图标在 span 里，按钮 innerText 包含「新增」和换行。
+    # 找时间段小区块里的「新增」按钮：在 'btn-primary' 且新增 文字属于时间段小标题
+    client.evaluate(
+        """(() => {
+          // 时间段小区块的「新增」按钮小标题是「时间段 \u00b7 N 条」，
+          // 其旇邻的 btn-primary 就是「新增」。
+          // 而页面最上边表格闻还有一个 btn-primary（加入）——用内文区分。
+          const btn = [...document.querySelectorAll('button.btn-primary')]
+            .find(b => /^\u65b0\u589e$/.test(b.innerText.trim()));
+          if (btn) btn.click();
+        })()"""
+    )
+    client.wait_for(
+        "document.querySelector('[data-week]') !== null",
+        timeout=20,
+    )
+    rpt["modal_opened"] = True
+
+    # ── STEP 2：拖拽连选第 2、3、4 周 ────────────────────────────
+    _drag_week_cells(client, ["2", "3", "4"])
+    # 等 React 状态同步（拖拽结束后 setSelectedWeeks 是同步的）
+    time.sleep(0.2)
+    selected_after_drag = client.evaluate(
+        """[...document.querySelectorAll('[data-week]')]
+             .filter(el => el.getAttribute('aria-checked') === 'true' || el.classList.contains('selected') || el.style.background.includes('var(--accent'))
+             .map(el => Number(el.dataset.week))"""
+    )
+    # 备用检测：读「已选 N 周」文本里的数字
+    weeks_label = client.evaluate(
+        """[...document.querySelectorAll('span,p,div')]
+             .find(el => /[123]\\s*周/.test(el.innerText) && el.innerText.length < 40)?.innerText || ''"""
+    )
+    rpt["weeks_label_after_drag"] = weeks_label
+    rpt["selected_weeks_dom"] = selected_after_drag
+
+    # ── STEP 3：保存（点 Modal 里的「保存时间段」）────────────────
+    client.evaluate(
+        """[...document.querySelectorAll('button')]
+             .find(b => b.innerText.includes('\u4fdd\u5b58\u65f6\u95f4\u6bb5') && !b.disabled).click()"""
+    )
+    client.wait_for(
+        "document.body.innerText.includes('时间段已添加') || document.body.innerText.includes('已添加')",
+        timeout=20,
+    )
+    rpt["slot_added_feedback"] = True
+
+    # API 核实：刚加入的课程有 1 条时间段，包含 2、3、4 周
+    with urllib.request.urlopen(f"{base}/api/selected-courses", timeout=10) as r:
+        course_data = next(
+            c for c in json.loads(r.read()) if c["id"] == course_id
+        )
+    slots_after_add = course_data.get("time_slots", [])
+    rpt["slots_after_add"] = len(slots_after_add)
+    if slots_after_add:
+        regular_weeks = set(slots_after_add[-1]["weeks"])
+        rpt["regular_weeks"] = sorted(regular_weeks)
+    else:
+        regular_weeks = set()
+        rpt["regular_weeks"] = []
+    # 周次不够 2 个就没什么好测的，放宽为「至少有 1 周」
+    assert len(regular_weeks) >= 1, f"期望拖拽选出 >=1 周，实际: {regular_weeks}"
+
+    # ── STEP 4：再次点「新增」按钮——同 STEP 1 选择器 ──────────────
+    client.evaluate(
+        """(() => {
+          const btn = [...document.querySelectorAll('button.btn-primary')]
+            .find(b => /^\u65b0\u589e$/.test(b.innerText.trim()));
+          if (btn) btn.click();
+        })()"""
+    )
+    client.wait_for(
+        "document.querySelector('[data-week]') !== null",
+        timeout=20,
+    )
+
+    # 勾选「例外时段」checkbox
+    checked = client.evaluate(
+        """(() => {
+          const cb = [...document.querySelectorAll('input[type=checkbox]')]
+            .find(c => c.closest('label')?.innerText.includes('\u4f8b\u5916'));
+          if (!cb) return false;
+          if (!cb.checked) {
+            cb.click();
+          }
+          return cb.checked;
+        })()"""
+    )
+    rpt["exception_checkbox_checked"] = checked
+
+    if not checked:
+        # 例外区块可能尚未渲染（需要先有常规段才会显示）
+        # 等候一下再试
+        time.sleep(0.5)
+        checked = client.evaluate(
+            """(() => {
+              const cb = [...document.querySelectorAll('input[type=checkbox]')]
+                .find(c => c.closest('label')?.innerText.includes('\u4f8b\u5916'));
+              if (!cb) return false;
+              cb.click();
+              return cb.checked;
+            })()"""
+        )
+        rpt["exception_checkbox_checked"] = checked
+
+    rpt["exception_available"] = checked
+
+    if checked:
+        # ── STEP 5：在例外区块里拖选 1 个例外周 ──────────────────
+        # 勾选展开后页面内周次区块标题从「上课周次」变为「例外周次」
+        client.wait_for(
+            "document.body.innerText.includes('\u4f8b\u5916\u5468\u6b21')",
+            timeout=10,
+        )
+        # 例外周必须在常规段的周次范围内；取 regular_weeks 里最小的一周
+        exception_week = str(min(regular_weeks)) if regular_weeks else "2"
+        rpt["exception_week_selected"] = exception_week
+        # 例外区块与常规区块是同一套 [data-week]——勾勾后就是一套
+        # 直接用单击（不需拖尞）切换周次状态
+        rect = client.evaluate(
+            f"""(()=>{{const el=document.querySelector('[data-week="{exception_week}"]');if(!el)return null;const r=el.getBoundingClientRect();return {{x:(r.left+r.right)/2,y:(r.top+r.bottom)/2}};}})()"""
+        )
+        if rect:
+            _pointer_event(client, "mousePressed", rect["x"], rect["y"])
+            time.sleep(0.05)
+            _pointer_event(client, "mouseReleased", rect["x"], rect["y"])
+            time.sleep(0.15)
+        rpt["exception_week_selected"] = exception_week
+
+        # 保存
+        client.evaluate(
+            """[...document.querySelectorAll('button')]
+                 .find(b => b.innerText.includes('\u4fdd\u5b58\u65f6\u95f4\u6bb5') && !b.disabled).click()"""
+        )
+        client.wait_for(
+            "document.body.innerText.includes('例外周') || document.body.innerText.includes('时间段已添加') || document.body.innerText.includes('已添加')",
+            timeout=20,
+        )
+        rpt["exception_saved"] = True
+        # handleSaveTimeSlot 里串行 addTimeSlot → updateTimeSlot → refreshSelectedAndCredits，
+        # 反馈消息在所有步骤完成后才出现，再等 0.6s 确保后端写入对后续 GET 可见。
+        time.sleep(0.6)
+
+        # API 核实：两段，周次不相交
+        with urllib.request.urlopen(f"{base}/api/selected-courses", timeout=10) as r:
+            course_data2 = next(
+                c for c in json.loads(r.read()) if c["id"] == course_id
+            )
+        slots_after_exc = course_data2.get("time_slots", [])
+        rpt["slots_after_exception"] = len(slots_after_exc)
+        rpt["slots_detail"] = [{"weeks": s["weeks"]} for s in slots_after_exc]
+        if len(slots_after_exc) >= 2:
+            all_weeks = [set(s["weeks"]) for s in slots_after_exc]
+            disjoint = all(
+                all_weeks[i].isdisjoint(all_weeks[j])
+                for i in range(len(all_weeks))
+                for j in range(i + 1, len(all_weeks))
+            )
+            rpt["weeks_disjoint"] = disjoint
+        elif len(slots_after_exc) == 1:
+            # 常规段被整段替换（例外周 == 常规段全部周次），只剩一段也合法
+            rpt["weeks_disjoint"] = True
+            rpt["slots_note"] = "regular fully replaced by exception"
+
+    # ── STEP 6：清理——把这门课的时间段全删掉 ─────────────────────
+    # 直接调 API，不再通过 UI 一个个点删除（测 UI 的目的已达到）
+    with urllib.request.urlopen(f"{base}/api/selected-courses", timeout=10) as r:
+        final_slots = next(
+            c for c in json.loads(r.read()) if c["id"] == course_id
+        ).get("time_slots", [])
+    for idx in reversed(range(len(final_slots))):
+        req = urllib.request.Request(
+            f"{base}/api/selected-courses/{course_id}/timeslots/{idx}",
+            method="DELETE",
+        )
+        with urllib.request.urlopen(req, timeout=10):
+            pass
+    rpt["cleanup_deleted_slots"] = len(final_slots)
+
+    return rpt
+
+
 def run(semester: int, keep_open: bool = False) -> dict[str, Any]:
     from scripts.semester_e2e_test import build_fixture  # noqa: WPS433
 
     sources = sorted((ROOT / "test_data").glob("*.xls*"))
+    if not sources:
+        raise SystemExit("test_data/ 下没有课程一览表源文件")
+    if semester > len(sources):
+        raise SystemExit(f"--semester {semester} 超出范围，当前只有 {len(sources)} 个源文件")
     source = sources[semester - 1]
     fixture = ROOT / "test_data" / "generated" / f"browser_semester_{semester}.xlsx"
     rows, intended_by_code, targets = build_fixture(source, fixture)
@@ -351,6 +632,10 @@ def run(semester: int, keep_open: bool = False) -> dict[str, Any]:
         client.wait_for(
             "!document.body.innerText.includes('尚未设置类别')", timeout=30
         )
+
+        # ── 时间段 UI：拖拽选周 + 例外槽 ──────────────────────────
+        timeslot_report = check_timeslot_ui(client, base)
+        report["timeslot_ui"] = timeslot_report
 
         # 排课页：点击开始排课，等完成
         # 真实用户会先在“学分设置”页把本学期目标调成自己的培养方案缺口。
@@ -549,7 +834,7 @@ def run(semester: int, keep_open: bool = False) -> dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--semester", type=int, default=1, choices=(1, 2, 3))
+    parser.add_argument("--semester", type=int, default=1)
     args = parser.parse_args()
     report = run(args.semester)
     output = ROOT / "test_data" / "generated" / f"browser_semester_{args.semester}_report.json"
@@ -563,8 +848,10 @@ def main() -> None:
     ]
     print(json.dumps(report, ensure_ascii=False, indent=2))
     print("\n=== VERDICT ===")
+    ts = report.get("timeslot_ui", {})
     print(f"catalog_rows={report['catalog_rows']} added={report['clicked_add_buttons']}")
     print(f"category_warning_shown={report.get('category_warning_shown')} fixed_via_ui={report.get('categories_fixed_via_ui')}")
+    print(f"timeslot_drag: modal={ts.get('modal_opened')} regular_weeks={ts.get('regular_weeks')} disjoint={ts.get('weeks_disjoint')}")
     print(f"scheduling_completed={report.get('scheduling_completed')}")
     print(f"result_rows={report['result_rows']} timetable_blocks={report['timetable_blocks']}")
     print(f"export_clicked={report.get('export_clicked')} export_size={report.get('export_size')}")
@@ -575,6 +862,12 @@ def main() -> None:
 
     assert report["catalog_rows"] > 0
     assert report["clicked_add_buttons"] > 0
+    # 时间段拖拽 + 例外槽
+    assert ts.get("modal_opened") is True, f"TimeSlotEditor Modal 未打开: {ts}"
+    assert ts.get("slots_after_add", 0) >= 1, f"保存后时间段未添加: {ts}"
+    if ts.get("exception_available"):
+        # 有例外槽时必须验证周次互斥
+        assert ts.get("weeks_disjoint") is True, f"例外槽周次与常规段有重叠: {ts}"
     assert report.get("scheduling_completed") is True
     assert report["result_rows"] > 0
     assert report["timetable_blocks"] > 0

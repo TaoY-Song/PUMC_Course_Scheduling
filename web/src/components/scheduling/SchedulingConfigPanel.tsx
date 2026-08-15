@@ -74,20 +74,28 @@ export function SchedulingConfigPanel({
               onChange={(e) => onChange(updateConfig(value, 'campus_conflict_mode', e.target.value))}
               className="input-base"
             >
-              <option value="DAILY">DAILY — 同天禁跨校区</option>
-              <option value="PERIOD">PERIOD — 相邻节次禁跨</option>
+              <option value="DAILY">DAILY — 同一天不得跳校区</option>
+              <option value="PERIOD">PERIOD — 跳校区需留转场间隔</option>
               <option value="DISABLED">DISABLED — 不检查</option>
             </select>
+            {/* PERIOD 按半天时段分块判定，没有可调阈值：能不能赶取决于
+                两节课中间有没有午休/晚饭，而不是隔了几节。*/}
+            <p className="mt-1.5 text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>
+              {value.campus_conflict_mode === 'DAILY'
+                ? '同一天内只允许一个校区的课。'
+                : value.campus_conflict_mode === 'PERIOD'
+                  ? '同一半天时段内不得跨校区（1-4 上午 / 5-8 下午 / 9-10 晚上）；隔着午休或晚饭则允许。例：1-2 节与 3-4 节不得跨校区，3-4 节与 5-6 节可以。'
+                  : '不做校区检查，跟头跟尾的跨校区也会接受。'}
+            </p>
           </div>
         </div>
 
         {/* Numeric fields */}
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
           {([
             { key: 'time_limit'            as const, label: '时间限制', unit: 's', min: 10,  max: 300, step: 5    },
             { key: 'max_solutions'         as const, label: '最大解数', unit: '',  min: 1,   max: 10,  step: 1    },
-            { key: 'credit_overflow_ratio' as const, label: '溢出比例', unit: '',  min: 0,   max: 0.5, step: 0.05 },
-            { key: 'campus_transition_time'as const, label: '转场节次', unit: '',  min: 0,   max: 10,  step: 1    },
+            { key: 'credit_overflow'       as const, label: '溢出学分', unit: '分', min: 0,   max: 10,  step: 0.5  },
           ] as const).map((f) => (
             <label key={f.key}>
               <span className="mb-1 block text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>
@@ -101,7 +109,7 @@ export function SchedulingConfigPanel({
                 value={value[f.key]}
                 onChange={(e) =>
                   onChange(updateConfig(value, f.key,
-                    f.key === 'credit_overflow_ratio'
+                    f.key === 'credit_overflow'
                       ? Number(e.target.value)
                       : Number.parseInt(e.target.value || '0', 10),
                   ))
@@ -111,6 +119,11 @@ export function SchedulingConfigPanel({
             </label>
           ))}
         </div>
+        <p className="text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>
+          溢出学分：每个类别允许超出要求的学分数。培养方案只规定下限
+          （如「限选 {'>='}1 分」），所以适当超出是合规的。若某类别一门都没排上，
+          系统会突破此上限收下一门——该类 0 学分比超出更不合规。
+        </p>
 
         {/* Footer */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3"

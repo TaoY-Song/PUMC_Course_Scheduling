@@ -84,11 +84,13 @@ class SchedulingConfigDTO(BaseModel):
     campus_conflict_mode: CampusConflictMode = CampusConflictMode.DAILY
     max_solutions: int = Field(default=1, ge=1, le=10)
     time_limit: int = Field(default=60, ge=10, le=300)
-    credit_overflow_ratio: float = Field(default=0.1, ge=0.0, le=0.5)
-    # 🔧 P0 修复：单位统一为“节次”，与核心 min_campus_transfer_time 一致。
-    # 之前此字段标注为分钟(0-120)却直接赋给以节次为单位的核心配置，
-    # 造成单位不匹配（填 30 分钟实际变成要求间隔 30 节，永远无法满足）。
-    campus_transition_time: int = Field(default=2, ge=0, le=10)
+    # 学分溢出上限用固定学分（不是比例）。比例制在小缺口上张不开：
+    # 限选要求 1.0 分、ratio=0.2 时上限只 1.2，连 1.5 分的课都收不下，
+    # 而培养方案写的是「>=1 学分」，只有下限。
+    credit_overflow: float = Field(default=1.0, ge=0.0, le=10.0)
+    # 已删除 campus_transition_time：PERIOD 模式现在按半天时段分块
+    # 判定（上午/下午/晚上），没有“隔几节”这个可调阈值。
+    # 留个不生效的旋钮比删掉它更坑人。
 
 
 class CreditRequirementDTO(BaseModel):

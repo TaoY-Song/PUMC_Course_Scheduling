@@ -163,7 +163,19 @@ class SelectedCourse:
     def get_available_categories(self) -> List[str]:
         """获取可选的课程类别列表"""
         # 根据课程的原始类别返回对应的可选类别（导入和手动添加的课程都遵循相同规则）
-        original_category = self.course.category
+        original_category = str(self.course.category or "").strip()
+
+        # 原表根本没有类别信息（缺列或该行为空）：无法缩小范围，
+        # 必须把六个类别全部给出，否则用户根本选不到公共必修/通识等。
+        if not original_category or original_category.lower() in ("nan", "none"):
+            return [
+                "公共必修课 - 公共必修",
+                "公共必修课 - 公共必修（二选一）",
+                "选修课 - 限制性选修",
+                "选修课 - 通识选修",
+                "选修课 - 学位选修",
+                "学位必修课（核心课）",
+            ]
 
         # 通识选修课：只能选择通识选修
         if "通识选修" in original_category:

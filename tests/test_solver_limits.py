@@ -100,7 +100,7 @@ def test_small_required_schedules_match_an_exhaustive_oracle(
             max_solutions=1,
             max_solve_time_seconds=10,
             credit_constraint_mode=CreditConstraintMode.REQUIRED,
-            max_credit_overflow_ratio=1.0,
+            max_credit_overflow=2.0,
         )
         engine = SchedulingEngine(config, manager)
 

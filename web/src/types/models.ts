@@ -44,8 +44,7 @@ export interface SchedulingConfig {
   campus_conflict_mode: CampusConflictMode;
   max_solutions: number;
   time_limit: number;
-  credit_overflow_ratio: number;
-  campus_transition_time: number;
+  credit_overflow: number;
 }
 
 export interface CreditRequirement {

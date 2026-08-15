@@ -116,7 +116,12 @@ def plan_courses(frame: pd.DataFrame) -> list[tuple[pd.Series, str, str]]:
     return planned
 
 
-def build_fixture(source: Path, output: Path) -> tuple[list[dict[str, Any]], dict[str, str], dict[str, float]]:
+def build_fixture(
+    source: Path,
+    output: Path,
+    *,
+    drop_category_column: bool = False,
+) -> tuple[list[dict[str, Any]], dict[str, str], dict[str, float]]:
     """构造一个学期的待选课：每次课 4 节（上午或下午），高学分排两次。
 
     时段池是有限的（5 天 x 2 个块），所以采用确定性预分配：
@@ -201,14 +206,29 @@ def build_fixture(source: Path, output: Path) -> tuple[list[dict[str, Any]], dic
     }
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(rows).to_excel(output, index=False)
+    frame_out = pd.DataFrame(rows)
+    if drop_category_column:
+        # 模拟真实存在的缺列表（如附件3-2025下）。它们必须能导入，
+        # 然后全部呈现为「类别待设置」交用户手工指定；
+        # 不能静默归入某个学分桶。
+        frame_out = frame_out.drop(columns=["课程类别"])
+    frame_out.to_excel(output, index=False)
     return rows, intended_by_code, effective_targets
 
 
-def run_api_scenario(source: Path, fixture: Path, report_path: Path) -> dict[str, Any]:
-    fixture_rows, intended_by_code, targets = build_fixture(source, fixture)
+def run_api_scenario(
+    source: Path,
+    fixture: Path,
+    report_path: Path,
+    *,
+    drop_category_column: bool = False,
+) -> dict[str, Any]:
+    fixture_rows, intended_by_code, targets = build_fixture(
+        source, fixture, drop_category_column=drop_category_column
+    )
     report: dict[str, Any] = {
         "source_semester": source.name,
+        "category_column_dropped": drop_category_column,
         "fixture": str(fixture.relative_to(ROOT)),
         "input_courses": len(fixture_rows),
         "credit_targets": targets,
@@ -270,8 +290,8 @@ def run_api_scenario(source: Path, fixture: Path, report_path: Path) -> dict[str
                 "campus_conflict_mode": "DAILY",
                 "max_solutions": 1,
                 "time_limit": 30,
-                "credit_overflow_ratio": 0.5,
-                "campus_transition_time": 2,
+                "credit_overflow": 2.0,
+
             },
         )
         config_response.raise_for_status()
@@ -434,19 +454,38 @@ def run_api_scenario(source: Path, fixture: Path, report_path: Path) -> dict[str
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--semester", type=int, default=2, choices=(1, 2, 3))
+    parser.add_argument("--semester", type=int, default=1)
+    parser.add_argument(
+        "--drop-category-column",
+        action="store_true",
+        help="构造缺「课程类别」列的表，验证手工设类别的兼容路径",
+    )
     args = parser.parse_args()
     sources = sorted((ROOT / "test_data").glob("*.xls*"))
-    if len(sources) != 3:
-        raise SystemExit(f"预期 3 个学期文件，实际找到 {len(sources)} 个")
+    if not sources:
+        raise SystemExit("test_data/ 下没有课程一览表源文件")
+    if args.semester > len(sources):
+        available = "\n".join(f"  {i + 1}. {s.name}" for i, s in enumerate(sources))
+        raise SystemExit(
+            f"--semester {args.semester} 超出范围，当前只有 {len(sources)} 个源文件：\n{available}"
+        )
     source = sources[args.semester - 1]
-    fixture = ROOT / "test_data" / "generated" / f"semester_{args.semester}_selected_courses.xlsx"
-    report_path = ROOT / "test_data" / "generated" / f"semester_{args.semester}_e2e_result.json"
-    report = run_api_scenario(source, fixture, report_path)
+    suffix = "_no_category" if args.drop_category_column else ""
+    fixture = (
+        ROOT / "test_data" / "generated" / f"semester_{args.semester}{suffix}_selected_courses.xlsx"
+    )
+    report_path = (
+        ROOT / "test_data" / "generated" / f"semester_{args.semester}{suffix}_e2e_result.json"
+    )
+    report = run_api_scenario(
+        source, fixture, report_path, drop_category_column=args.drop_category_column
+    )
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
     print("\n=== VERDICT ===")
     print(f"source={report['source_semester']}")
+    if report["category_column_dropped"]:
+        print("mode=缺「课程类别」列（兼容路径），所有课应先为待设置再由用户手选")
     print(f"targets={report['credit_targets']}")
     print(
         f"loaded={report['loaded_count']} selected={report['selected_count']} "
@@ -464,6 +503,13 @@ def main() -> None:
     assert report["unmet_categories"] == {}, report["unmet_categories"]
     assert report["credit_gap_notes"] == [], report["credit_gap_notes"]
     assert report["score"]["credit_match_score"] >= 90.0, report["score"]
+    if report["category_column_dropped"]:
+        # 缺列时没有任何类别信息可推，每一门都必须经用户手选；
+        # 若少于课程总数，说明有课被静默归桶了。
+        assert report["category_patched"] == report["loaded_count"], (
+            f"缺类别列时应有 {report['loaded_count']} 门待设置，"
+            f"实际只有 {report['category_patched']} 门——其余被静默归类"
+        )
     print("ALL_API_CHECKS_PASSED")
 
 

@@ -1,61 +1,58 @@
-# Python virtual environment
-PUMC_venv/
-venv/
-env/
-.venv/
-# Python compiled files
-*.pyc
-*.pyo
+# ── Python ──────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+PUMC_venv/
 
-# PyInstaller build files
+# ── 测试 / 覆盖率 ─────────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── 构建产物 ──────────────────────────────────────────────────────────────────
 dist/
 build/
-
-# Installer output
 installer_output/
 *.exe
 *.msi
+*.spec
 
-# Log files
+# ── 前端 ──────────────────────────────────────────────────────────────────────
+web/node_modules/
+# web/dist/ 由 app_web.py 静态托管，必须提交
+# 如果不需要提交构建产物，取消下行注释：
+# web/dist/
+
+# ── 数据文件 ──────────────────────────────────────────────────────────────────
+test_data/
+exports/
+
+# ── 日志 & 临时文件 ───────────────────────────────────────────────────────────
 *.log
-
-# Excel files (data)
-*.xlsx
-*.xls
-# 例外：三个学期的源课程表是 E2E 脚本的必需输入，必须入库
-!test_data/*.xls
-
-# 测试运行产物（后端日志、生成的 fixture 与报告）
-test_data/generated/
-
-# IDE and editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS files
-Thumbs.db
-.DS_Store
-ehthumbs.db
-
-# Augment specific
-.cursorindexingignore
-.augmentignore
-.specstory/
-
-# Temporary files
 *.tmp
 *.temp
 *.bak
 *.backup
 
-# Test files
-.pytest_cache/
-.coverage
-htmlcov/
-web/node_modules
+# ── IDE / 编辑器 ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── 操作系统 ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# ── AI 工具 ───────────────────────────────────────────────────────────────────
+.cursorindexingignore
+.augmentignore
+.specstory/
 .claude/
+.pi/

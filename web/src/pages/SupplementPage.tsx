@@ -4,7 +4,6 @@ import {
   FileSearch,
   FlaskConical,
   RefreshCcw,
-  ScrollText,
   Upload,
 } from 'lucide-react';
 import { MetricCard, Pill, Surface } from '../components/workbench/atoms';
@@ -25,10 +24,6 @@ export function SupplementPage() {
   const outputUrl = useMemo(
     () => (result?.output_file_name ? buildArtifactDownloadUrl(result.output_file_name) : null),
     [result?.output_file_name],
-  );
-  const logUrl = useMemo(
-    () => (result?.log_file_name ? buildArtifactDownloadUrl(result.log_file_name) : null),
-    [result?.log_file_name],
   );
   const stats = result?.stats ?? {};
   const addedCount = Number(stats.successfully_added ?? result?.added_courses.length ?? 0);
@@ -82,7 +77,7 @@ export function SupplementPage() {
             <span className={required ? 'tag tag-red' : 'tag tag-gray'}>{required ? '必选' : '可选'}</span>
           </div>
           <p className="mt-1 truncate font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            {file?.name || (required ? '尚未选择文件' : '未上传时使用当前会话课程源')}
+            {file?.name || (required ? '尚未选择文件' : '不上传则使用本次会话已导入的课程表')}
           </p>
         </div>
         <div className="flex gap-2">
@@ -146,7 +141,10 @@ export function SupplementPage() {
           </div>
           <div className="space-y-3">
             {fileCard('排课结果 Excel', true, scheduleFile, () => scheduleInputRef.current?.click())}
-            {fileCard('备选课程表', false, courseFile, () => courseInputRef.current?.click(), () => setCourseFile(null))}
+            <p className="-mt-1 px-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              「排课」页导出的 xlsx，记录已排喗的课程与占用的时间段。
+            </p>
+            {fileCard('原始课程一览表', false, courseFile, () => courseInputRef.current?.click(), () => setCourseFile(null))}
             <div className="rounded-lg border p-4" style={{ borderColor: 'var(--border-card)', background: 'var(--bg-sidebar)' }}>
               <p className="text-[10px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--text-on-dark-muted)' }}>
                 Run Script
@@ -172,9 +170,7 @@ export function SupplementPage() {
               {outputUrl && (
                 <a href={outputUrl} download className="btn-primary"><Download className="h-3.5 w-3.5" />结果 Excel</a>
               )}
-              {logUrl && (
-                <a href={logUrl} download className="btn-ghost"><ScrollText className="h-3.5 w-3.5" />运行日志</a>
-              )}
+
             </div>
           </div>
 

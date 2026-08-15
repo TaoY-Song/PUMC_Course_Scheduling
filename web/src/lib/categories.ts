@@ -32,12 +32,19 @@ export function isCategoryUnset(category?: string | null): boolean {
 }
 
 export function getCategoryOptions(originalCategory: string, currentValue?: string): string[] {
-  const normalized = originalCategory || '';
+  const normalized = (originalCategory ?? '').trim();
   let options: string[];
 
-  if (normalized.includes('通识选修')) {
+  // 原表没有类别信息（缺「课程类别」列，或该行为空）：无法缩小范围，
+  // 必须把六个类别全给出。否则用户根本选不到公共必修/通识等——
+  // 而这类表恰恰最需要手工设类别。
+  if (!normalized || isCategoryUnset(normalized)) {
+    options = [...CREDIT_CATEGORIES];
+  } else if (normalized.includes('通识选修')) {
     options = ['选修课 - 通识选修'];
-  } else if (normalized.includes('限制性选修')) {
+  } else if (normalized.includes('限制选修') || normalized.includes('限制性选修')) {
+    // 真实课表写的是「限制选修课」（无“性”字）；原来只匹配「限制性选修」，
+    // 于是限选课落到 else 分支，下拉里给的是学位选修/核心课。
     options = ['选修课 - 限制性选修'];
   } else if (normalized.includes('公共必修')) {
     options = ['公共必修课 - 公共必修', '公共必修课 - 公共必修（二选一）'];

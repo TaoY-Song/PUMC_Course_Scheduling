@@ -405,11 +405,13 @@ class SchedulingEngine:
         """完整的约束满足排课算法"""
         print(f"开始约束满足排课：{len(timed_courses)} 门有时间课程")
 
-        # 第1步：预筛选 - 如果课程过多且冲突严重，先进行智能筛选
-        if len(timed_courses) > 15:
-            print(f"课程数量较多({len(timed_courses)}门)，进行智能预筛选...")
+        # 第1步：候选减量——只在确实过多时介入。
+        # 阈值跟 CANDIDATE_LIMIT 保持一致：之前写死 15，而真实培养方案
+        # 单学期待选就有 18 门，每次都会被预筛，反而丢掉回溯需要的课。
+        if len(timed_courses) > self.CANDIDATE_LIMIT:
+            print(f"课程数量较多({len(timed_courses)}门)，进行候选减量...")
             timed_courses = self._intelligent_course_filtering(timed_courses)
-            print(f"预筛选完成：保留 {len(timed_courses)} 门优质课程")
+            print(f"减量完成：保留 {len(timed_courses)} 门候选课程")
 
         # 第2步：按课程编码分组，实现同一课程不同班次互斥
         course_groups = self._group_courses_by_code_from_selected(timed_courses)
@@ -684,8 +686,18 @@ class SchedulingEngine:
                 candidate_course, current_solution, used_time_slots
             ):
                 # 🔧 关键修复：检查学分效率约束
+                # category_pool 传整个候选集（所有课程组展平），而不是只传
+                # 本组的班次——“救场”需要知道同类别里有没有其它课程
+                # 可选，而同类别的课程分属不同的课程组（课程编码不同）。
                 if self._should_add_course_for_credit_efficiency(
-                    candidate_course, current_solution, credit_requirements
+                    candidate_course,
+                    current_solution,
+                    credit_requirements,
+                    category_pool=[
+                        course
+                        for group in course_groups.values()
+                        for course in group
+                    ],
                 ):
                     # 添加到当前解
                     current_solution.append(candidate_course)
@@ -903,23 +915,25 @@ class SchedulingEngine:
                     # 时段模式：按配置的最小转场节次判断，而不是固定时段分组。
                     # ConstraintChecker 使用相同的语义，确保“搜索是否接纳”与
                     # “结果是否判冲突”不会互相矛盾。
-                    if not self._has_sufficient_campus_transfer_time(
+                    # 时段模式：同一半天时段内不得跨校区，跳块（隔着午休/
+                    # 晚饭）则允许。ConstraintChecker 使用相同语义，确保“搜索是否
+                    # 接纳”与“结果是否判冲突”不会互相矛盾。
+                    if not self._is_campus_transfer_feasible(
                         candidate_course, existing_course
                     ):
                         return False
 
         return True
 
-    def _has_sufficient_campus_transfer_time(
+    def _is_campus_transfer_feasible(
         self, course1: SelectedCourse, course2: SelectedCourse
     ) -> bool:
-        """检查两门课程间是否有足够的跨校区转场时间。
+        """两门跨校区课之间能不能完成转场。
 
-        仅同一天且周次重叠时需要转场。间隔定义为两段课程之间完整空出的
-        节次数，例如 1-2 节与 7-8 节之间有 4 个空节（3-6）。
+        仅同一天且周次重叠时需要转场。判据是两节课是否落在同一个
+        半天时段（config.half_day_blocks）：同块意味着中间只有课间操，
+        赶不上；跳块意味着隔着午休或晚饭，赶得上。
         """
-        min_gap = self.config.min_campus_transfer_time
-
         for ts1 in course1.time_slots:
             for ts2 in course2.time_slots:
                 if ts1.weekday != ts2.weekday:
@@ -927,13 +941,9 @@ class SchedulingEngine:
                 if not (set(ts1.weeks) & set(ts2.weeks)):
                     continue
 
-                if ts1.start_section <= ts2.start_section:
-                    earlier, later = ts1, ts2
-                else:
-                    earlier, later = ts2, ts1
-
-                gap = later.start_section - earlier.end_section - 1
-                if gap < min_gap:
+                blocks1 = self.config.blocks_for_range(ts1.start_section, ts1.end_section)
+                blocks2 = self.config.blocks_for_range(ts2.start_section, ts2.end_section)
+                if blocks1 & blocks2:
                     return False
         return True
 
@@ -944,27 +954,6 @@ class SchedulingEngine:
         weekdays1 = set(ts.weekday for ts in course1.time_slots)
         weekdays2 = set(ts.weekday for ts in course2.time_slots)
         return bool(weekdays1 & weekdays2)
-
-    def _calculate_time_gap(
-        self, course1: SelectedCourse, course2: SelectedCourse
-    ) -> int:
-        """计算两门课程之间的最小时间间隔"""
-        min_gap = float("inf")
-
-        for ts1 in course1.time_slots:
-            for ts2 in course2.time_slots:
-                if ts1.weekday == ts2.weekday:
-                    # 计算时间间隔
-                    if ts1.end_section < ts2.start_section:
-                        gap = ts2.start_section - ts1.end_section
-                    elif ts2.end_section < ts1.start_section:
-                        gap = ts1.start_section - ts2.end_section
-                    else:
-                        gap = 0  # 时间重叠
-
-                    min_gap = min(min_gap, gap)
-
-        return int(min_gap) if min_gap != float("inf") else 0
 
     @staticmethod
     def _time_slot_keys(course: SelectedCourse):
@@ -988,11 +977,31 @@ class SchedulingEngine:
         """将课程的时间段添加到已使用时间段集合"""
         used_time_slots.update(self._time_slot_keys(course))
 
+    #: 预筛选保留的候选课上限。它只是回溯的规模闸，不是最终选择。
+    #: 取 24（> 真实单学期待选量），使典型培养方案不会被预筛削掉。
+    CANDIDATE_LIMIT = 24
+
     def _intelligent_course_filtering(
         self, timed_courses: List[SelectedCourse]
     ) -> List[SelectedCourse]:
-        """智能课程筛选：从大量冲突课程中选择最优子集"""
-        print("执行智能课程筛选算法...")
+        """限制候选规模，供回溯搜索使用。
+
+        注意它的职责边界：**只做减量，不做选择**。
+
+        之前这里跑一遗贪心（同类内小学分优先 + 学分效率拦）并把结果
+        当成候选集，等于提前替回溯做了决定——而贪心在这里并不最优。
+        实测：核心课要 11 分，池里 [2,2,2.5,3,3,3]。贪心从小到大拿到
+        2+2+2.5+3=9.5，再加任一 3.0 就超上限（12.0）被拒 → 卡在 9.5；
+        而回溯自己能拿到 3+3+3+2 = 11.0 达标。预筛把那些 3.0 分的课
+        提前丢了，回溯根本看不到它们。
+
+        现在只做两件事：
+        1. 同一课程编码的多个班次只留冲突最少的一个（真正的去重）
+        2. 若仍超 CANDIDATE_LIMIT，按类别轮流裁到上限（保证每类都有代表）
+
+        选哪些课交给回溯 + _rank_solutions。
+        """
+        print("执行候选课程减量...")
 
         # 第1步：按课程编码分组，每组只保留一个最优班次
         course_groups = self._group_courses_by_code_from_selected(timed_courses)
@@ -1004,35 +1013,18 @@ class SchedulingEngine:
             candidate_courses.append(best_course)
 
         print(
-            f"第1步完成：从{len(timed_courses)}门课程筛选到{len(candidate_courses)}门候选课程"
+            f"第1步完成：同课程多班次去重，{len(timed_courses)} 门 → {len(candidate_courses)} 门"
         )
 
-        # 第2步：使用贪心算法选择无冲突的课程子集
-        selected_courses = []
-        used_time_slots = set()
+        if len(candidate_courses) <= self.CANDIDATE_LIMIT:
+            return candidate_courses
 
-        # 获取学分要求
-        credit_requirements = self._calculate_credit_requirements()
-
-        # 按学分需求优先级排序候选课程
-        sorted_candidates = self._sort_courses_by_priority(candidate_courses)
-
-        for candidate in sorted_candidates:
-            # 检查是否与已选课程冲突
-            if self._is_course_compatible(candidate, selected_courses, used_time_slots):
-                # 检查学分效率约束：是否该类别已经满足要求
-                if self._should_add_course_for_credit_efficiency(
-                    candidate, selected_courses, credit_requirements
-                ):
-                    selected_courses.append(candidate)
-                    self._add_course_time_slots(candidate, used_time_slots)
-
-                    # 如果已经选择了足够的课程，可以停止
-                    if len(selected_courses) >= 15:  # 限制最多15门课程
-                        break
-
-        print(f"第2步完成：最终筛选出{len(selected_courses)}门无冲突课程")
-        return selected_courses
+        # 第2步：仍过多时按类别轮流裁到上限。
+        # 用 _sort_courses_by_priority 的轮流序，保证截断时各类都有代表；
+        # 不在这里做学分效率判定（那是回溯的责任）。
+        trimmed = self._sort_courses_by_priority(candidate_courses)[: self.CANDIDATE_LIMIT]
+        print(f"第2步完成：超出上限，按类别轮流裁到 {len(trimmed)} 门")
+        return trimmed
 
     def _select_best_class_from_group(
         self, courses: List[SelectedCourse], all_courses: List[SelectedCourse]
@@ -1068,39 +1060,73 @@ class SchedulingEngine:
     def _sort_courses_by_priority(
         self, courses: List[SelectedCourse]
     ) -> List[SelectedCourse]:
-        """按优先级排序课程：学分需求缺口大的类别优先，同类别内优先选择低学分课程"""
+        """排序候选课：各类别轮流（round-robin），同类别内优先低学分。
+
+        之前按 ``gap * 10`` 平铺排序，结果缺口最大的类别会把队列头部
+        全包下。配上 ``_intelligent_course_filtering`` 的 15 门上限，
+        小缺口类别根本轮不到：真实培养方案（18 门）下，核心课（缺 11 分）
+        占满名额，公共必修（缺 4 分）与限制性选修（缺 1 分）被整类丢弃。
+        公共必修是必须上的课，丢掉直接导致方案不可用。
+
+        现在改为按类别分组后交错输出，使任何截断位置都能覆盖到全部
+        有缺口的类别；类别之间的先后仍按缺口降序。
+        """
         credit_requirements = self._calculate_credit_requirements()
 
-        def get_priority_score(course: SelectedCourse) -> float:
-            category = course.custom_category
-
-            # 检查该类别是否已修满
+        def category_rank(category: str) -> float:
+            """类别优先度：已修满 < 无缺口 < 按缺口降序。"""
             requirement = self.credit_manager.get_requirement(category)
             if requirement and requirement.is_completed:
-                # 已修满的类别优先级最低
                 return -1000.0
-
-            # 该类别的学分缺口越大，优先级越高
             gap = credit_requirements.get(category, 0)
             if gap <= 0:
-                # 没有学分缺口的类别优先级很低
                 return -100.0
+            return gap
 
-            # 课程学分越低，优先级越高（避免不必要的超出）
+        def within_category_key(course: SelectedCourse) -> float:
+            # 同类别内低学分优先，减少不必要的学分溢出
             credits = course.course.credits
-            # 使用倒数来让低学分课程有更高优先级
-            credit_efficiency = 1.0 / credits if credits > 0 else 0
-            return gap * 10 + credit_efficiency
+            return credits if credits > 0 else float("inf")
 
-        return sorted(courses, key=get_priority_score, reverse=True)
+        grouped: Dict[str, List[SelectedCourse]] = defaultdict(list)
+        for course in courses:
+            grouped[course.custom_category].append(course)
+        for bucket in grouped.values():
+            bucket.sort(key=within_category_key)
+
+        ordered_categories = sorted(
+            grouped.keys(), key=lambda category: category_rank(category), reverse=True
+        )
+
+        # 轮流取课：每轮从每个类别各取一门
+        result: List[SelectedCourse] = []
+        round_index = 0
+        while True:
+            appended = False
+            for category in ordered_categories:
+                bucket = grouped[category]
+                if round_index < len(bucket):
+                    result.append(bucket[round_index])
+                    appended = True
+            if not appended:
+                break
+            round_index += 1
+
+        return result
 
     def _should_add_course_for_credit_efficiency(
         self,
         candidate: SelectedCourse,
         selected_courses: List[SelectedCourse],
         credit_requirements: Dict[str, float],
+        category_pool: Optional[List[SelectedCourse]] = None,
     ) -> bool:
-        """检查是否应该添加该课程（学分效率约束）"""
+        """检查是否应该添加该课程（学分效率约束）
+
+        category_pool：整个候选池（可选）。只用于“救场”判定：
+        只有当同类别里找不到不超上限的替代课时，才允许突破上限。
+        不传则退化为“只要该类为空就救”（偏宽松）。
+        """
         category = candidate.custom_category
 
         logger.debug(f"🔍 检查课程 {candidate.course.code} (类别: {category})")
@@ -1161,19 +1187,44 @@ class SchedulingEngine:
             )
             return False
 
-        # 如果未满足要求，检查添加后是否会过度超出
-        # 🔧 P0 修复：使用配置的溢出比例，而不是硬编码的 1 学分。
-        # 溢出上限 = 缺口 * (1 + max_credit_overflow_ratio)。
-        # ratio=0 表示不允许超出缺口；allow_credit_overflow=False 同效。
+        # 如果未满足要求，检查添加后是否会过度超出。
+        # 溢出上限用固定学分（max_credit_overflow）而不是比例：
+        # 比例制在小缺口上张不开——限选要求 1.0、ratio=0.2 时上限 1.2，
+        # 连一门 1.5 分的课都收不下，而培养方案只规定下限、无上限。
         new_total = selected_gap_credits + candidate.course.credits
-        if self.config.allow_credit_overflow:
-            overflow_allowance = required_gap * self.config.max_credit_overflow_ratio
-        else:
-            overflow_allowance = 0.0
+        overflow_allowance = (
+            self.config.max_credit_overflow if self.config.allow_credit_overflow else 0.0
+        )
         overflow_limit = required_gap + overflow_allowance
 
         # 浮点容差，避免 0.1+0.2 类误差误报
         if new_total > overflow_limit + 1e-9:
+            # 救场：该类别一门都没选中，而且同类里没有不超上限的替代课时，
+            # 允许突破上限收下这一门。用户把课放进候选池就是明确想修；
+            # 若该类唯一可选课超上限，拒掉会使该类 0 学分——
+            # 比溢出 0.5 分更不合培养方案。
+            #
+            # 必须先确认“没有更小的选择”，否则会被滥用：
+            # 要求 2.0、池里有 [1.0, 3.0] 时，回溯会先试空集状态，
+            # 救场直接放过 3.0，反而把正常的 1.0 挤掉。
+            if self.config.rescue_empty_category and selected_gap_credits <= 0:
+                has_smaller_option = False
+                if category_pool:
+                    for other in category_pool:
+                        if other is candidate:
+                            continue
+                        if other.custom_category != category:
+                            continue
+                        if other.course.credits <= overflow_limit + 1e-9:
+                            has_smaller_option = True
+                            break
+                if not has_smaller_option:
+                    logger.debug(
+                        f"   ⚠️ 救场：{category} 尚无选中课程且无替代，"
+                        f"允许 {candidate.course.code}({candidate.course.credits}学分) "
+                        f"突破溢出上限 {overflow_limit:.1f}"
+                    )
+                    return True
             logger.debug(
                 f"   ❌ 学分效率约束：添加 {candidate.course.code}({candidate.course.credits}学分) 会导致 {category} 过度超出({new_total:.1f} > 上限 {overflow_limit:.1f})"
             )

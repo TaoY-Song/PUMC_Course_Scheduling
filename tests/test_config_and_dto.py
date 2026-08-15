@@ -16,8 +16,8 @@ def test_validate_runs_without_attribute_errors():
 
 def test_validate_reports_bad_values():
     errors = SchedulingConfig(
-        min_campus_transfer_time=-1,
-        max_credit_overflow_ratio=2.0,
+        half_day_blocks=(("倒置", 5, 2),),
+        max_credit_overflow=-1.0,
         max_solve_time_seconds=0,
         max_solutions=0,
     ).validate()
@@ -35,8 +35,8 @@ def test_time_preference_score_is_callable():
     "factory,attr,expected",
     [
         ("get_default_config", "max_solutions", 100),
-        ("get_strict_config", "max_credit_overflow_ratio", 0.1),
-        ("get_flexible_config", "max_credit_overflow_ratio", 0.3),
+        ("get_strict_config", "max_credit_overflow", 0.5),
+        ("get_flexible_config", "max_credit_overflow", 2.0),
     ],
 )
 def test_preset_factories_are_static(factory, attr, expected):
@@ -49,8 +49,8 @@ def test_config_dict_roundtrip_preserves_every_field():
     original = SchedulingConfig(
         campus_conflict_mode=CampusConflictMode.PERIOD,
         credit_constraint_mode=CreditConstraintMode.REQUIRED,
-        min_campus_transfer_time=3,
-        max_credit_overflow_ratio=0.25,
+        half_day_blocks=(("上午", 1, 4), ("下午", 5, 8)),
+        max_credit_overflow=1.5,
         avoid_early_morning=True,
         avoid_late_evening=True,
         lunch_break_protection=True,
@@ -65,18 +65,43 @@ def test_config_dict_roundtrip_preserves_every_field():
     assert restored.lunch_break_protection is True
 
 
-def test_campus_transition_dto_uses_sections_not_minutes():
-    """The DTO advertised minutes (0-120) but fed a sections-based core field."""
+def test_half_day_blocks_survive_dict_roundtrip():
+    """时段划分是 PERIOD 模式的全部语义，序列化不能丢。"""
+    original = SchedulingConfig(
+        half_day_blocks=(("早", 1, 2), ("中", 3, 6), ("晚", 7, 10)),
+    )
+
+    restored = SchedulingConfig.from_dict(original.to_dict())
+
+    assert restored.half_day_blocks == original.half_day_blocks
+
+
+def test_period_knob_is_gone_from_the_dto():
+    """旧的 campus_transition_time（“隔几节”）语义上表达不了作息断点。
+
+    gap = 后一门.start - 前一门.end - 1 对下面三种情况全算 0：
+      1-2 → 3-4（课间 10 分，赶不上）
+      3-4 → 5-6（午休，赶得上）
+      7-8 → 9-10（晚饭，赶得上）
+    保留一个不生效的旋钮比删掉它更容易误导用户。
+    """
     from web_backend.models.dto import SchedulingConfigDTO
 
-    field = SchedulingConfigDTO.model_fields["campus_transition_time"]
-    constraints = {c.__class__.__name__: c for c in field.metadata}
+    assert "campus_transition_time" not in SchedulingConfigDTO.model_fields
 
-    assert field.default == 2, "default should be a plausible section count"
-    upper = next(
-        getattr(c, "le") for c in field.metadata if hasattr(c, "le")
-    )
-    assert upper == 10, "a 120-section transfer window is not meaningful"
+
+def test_overflow_dto_is_credits_not_ratio():
+    """溢出上限是学分数，不是 0-1 的比例。
+
+    比例制在小缺口上张不开：限选要求 1.0、ratio=0.2 时上限只 1.2，
+    连一门 1.5 分的课都收不下，该类反而 0 学分。
+    """
+    from web_backend.models.dto import SchedulingConfigDTO
+
+    assert "credit_overflow_ratio" not in SchedulingConfigDTO.model_fields
+    field = SchedulingConfigDTO.model_fields["credit_overflow"]
+    upper = next(getattr(c, "le") for c in field.metadata if hasattr(c, "le"))
+    assert upper > 1.0, "上限应以学分为单位，能超过 1"
 
 
 def test_selected_course_ids_are_stable_across_serialisations(make_course):
