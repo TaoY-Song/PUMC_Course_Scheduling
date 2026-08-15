@@ -15,8 +15,17 @@ from core.scheduling.constraints import ConstraintChecker
 from core.scheduling.engine import SchedulingEngine
 
 
-def _conflicts(courses, credit_manager, *, mode=CampusConflictMode.PERIOD):
-    config = SchedulingConfig(campus_conflict_mode=mode)
+def _conflicts(
+    courses,
+    credit_manager,
+    *,
+    mode=CampusConflictMode.PERIOD,
+    campus_equivalence_groups=(),
+):
+    config = SchedulingConfig(
+        campus_conflict_mode=mode,
+        campus_equivalence_groups=campus_equivalence_groups,
+    )
     return ConstraintChecker(config, credit_manager()).check_campus_conflicts(courses)
 
 
@@ -114,6 +123,65 @@ def test_same_campus_never_conflicts(credit_manager, make_course):
     b = make_course("B", weekday=1, start_section=3, end_section=4, campus="东单")
 
     assert _conflicts([a, b], credit_manager) == []
+
+
+@pytest.mark.parametrize("mode", [CampusConflictMode.DAILY, CampusConflictMode.PERIOD])
+def test_equivalent_campuses_do_not_conflict(credit_manager, make_course, mode):
+    a = make_course("A", weekday=1, start_section=1, end_section=2, campus="西北旺药植所校区")
+    b = make_course("B", weekday=1, start_section=3, end_section=4, campus="院校北区")
+
+    assert _conflicts(
+        [a, b],
+        credit_manager,
+        mode=mode,
+        campus_equivalence_groups=(("西北旺药植所校区", "院校北区"),),
+    ) == []
+
+
+def test_campuses_in_different_equivalence_groups_still_conflict(credit_manager, make_course):
+    a = make_course("A", weekday=1, start_section=1, end_section=2, campus="东单校区")
+    b = make_course("B", weekday=1, start_section=3, end_section=4, campus="西院")
+
+    conflicts = _conflicts(
+        [a, b],
+        credit_manager,
+        campus_equivalence_groups=(
+            ("西北旺药植所校区", "院校北区"),
+            ("东单校区", "东单附属楼"),
+        ),
+    )
+
+    assert len(conflicts) == 1
+
+
+def test_conflict_description_keeps_original_campus_names(credit_manager, make_course):
+    a = make_course("A", weekday=1, start_section=1, end_section=2, campus="院校北区")
+    b = make_course("B", weekday=1, start_section=3, end_section=4, campus="东单校区")
+
+    conflicts = _conflicts(
+        [a, b],
+        credit_manager,
+        mode=CampusConflictMode.DAILY,
+        campus_equivalence_groups=(("西北旺药植所校区", "院校北区"),),
+    )
+
+    assert len(conflicts) == 1
+    assert "院校北区" in conflicts[0].description
+    assert "西北旺药植所校区" not in conflicts[0].description
+
+
+def test_engine_and_checker_accept_equivalent_campuses(credit_manager, make_course):
+    config = SchedulingConfig(
+        campus_conflict_mode=CampusConflictMode.PERIOD,
+        campus_equivalence_groups=(("西北旺药植所校区", "院校北区"),),
+    )
+    checker = ConstraintChecker(config, credit_manager(required=2.0))
+    engine = SchedulingEngine(config, credit_manager(required=2.0))
+    a = make_course("A", weekday=1, start_section=1, end_section=2, campus="西北旺药植所校区")
+    b = make_course("B", weekday=1, start_section=3, end_section=4, campus="院校北区")
+
+    assert engine._is_campus_compatible(b, [a]) is True
+    assert checker.check_campus_conflicts([a, b]) == []
 
 
 def test_non_overlapping_weeks_never_conflict(credit_manager, make_course):

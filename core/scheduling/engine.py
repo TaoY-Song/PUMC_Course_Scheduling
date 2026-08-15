@@ -897,10 +897,10 @@ class SchedulingEngine:
         if self.config.campus_conflict_mode == CampusConflictMode.DISABLED:
             return True
 
-        candidate_campus = candidate_course.course.campus
+        candidate_campus = self.config.normalize_campus(candidate_course.course.campus)
 
         for existing_course in current_solution:
-            existing_campus = existing_course.course.campus
+            existing_campus = self.config.normalize_campus(existing_course.course.campus)
 
             # 如果校区相同，无冲突
             if candidate_campus == existing_campus:

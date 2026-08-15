@@ -49,6 +49,7 @@ def test_scheduling_config_roundtrip(client):
     payload = {
         "credit_constraint_mode": "OPTIMAL",
         "campus_conflict_mode": "PERIOD",
+        "campus_equivalence_groups": [["西北旺药植所校区", "院校北区"], ["东单校区", "西院"]],
         "max_solutions": 3,
         "time_limit": 45,
         "credit_overflow": 2.0,
@@ -65,6 +66,33 @@ def test_scheduling_config_roundtrip(client):
     assert body["time_limit"] == 45
     assert body["credit_overflow"] == pytest.approx(2.0)
     assert body["campus_conflict_mode"] == "PERIOD"
+    assert body["campus_equivalence_groups"] == [
+        ["西北旺药植所校区", "院校北区"],
+        ["东单校区", "西院"],
+    ]
+
+
+def test_invalid_campus_equivalence_groups_are_rejected_without_mutating_config(client):
+    valid_payload = {
+        "credit_constraint_mode": "OPTIMAL",
+        "campus_conflict_mode": "DAILY",
+        "campus_equivalence_groups": [["西北旺药植所校区", "院校北区"]],
+        "max_solutions": 1,
+        "time_limit": 60,
+        "credit_overflow": 1.0,
+    }
+    assert client.post("/api/scheduling/config", json=valid_payload).status_code == 200
+
+    invalid_payload = {**valid_payload, "campus_equivalence_groups": [
+        ["西北旺药植所校区", "院校北区"],
+        ["院校北区", "东单校区"],
+    ]}
+    response = client.post("/api/scheduling/config", json=invalid_payload)
+
+    assert response.status_code == 422
+    assert client.get("/api/scheduling/config").json()["campus_equivalence_groups"] == [
+        ["西北旺药植所校区", "院校北区"],
+    ]
 
 
 def test_period_mode_survives_config_roundtrip(client):

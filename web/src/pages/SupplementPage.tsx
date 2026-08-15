@@ -126,8 +126,8 @@ export function SupplementPage() {
           aria-live="polite"
           className="rounded-lg border px-4 py-3 text-sm"
           style={feedback.tone === 'error'
-            ? { borderColor: '#fca5a5', background: '#fff5f5', color: '#991b1b' }
-            : { borderColor: '#99f6e4', background: '#f0fdfb', color: '#0f766e' }}
+            ? { borderColor: 'var(--danger-border)', background: 'var(--danger-bg)', color: 'var(--danger-text)' }
+            : { borderColor: 'var(--success-border)', background: 'var(--success-bg)', color: 'var(--success-text)' }}
         >
           {feedback.message}
         </div>
@@ -226,7 +226,7 @@ interface ResultListProps {
 
 function ResultList({ title, empty, items }: ResultListProps) {
   return (
-    <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: '#faf9f6' }}>
+    <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-subtle)' }}>
       <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--text-muted)' }}>{title}</p>
       {items.length === 0 ? (
         <p className="py-4 text-center text-xs" style={{ color: 'var(--text-muted)' }}>{empty}</p>

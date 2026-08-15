@@ -49,6 +49,8 @@ class SchedulingConfig:
 
     # 校区冲突配置
     campus_conflict_mode: CampusConflictMode = CampusConflictMode.DAILY
+    # 每组校区在冲突判断中视为同一校区，课程原始校区名称不改。
+    campus_equivalence_groups: Tuple[Tuple[str, ...], ...] = ()
     #: 半天时段划分，PERIOD 模式用它判定“是不是同一块”。
     half_day_blocks: Tuple[Tuple[str, int, int], ...] = DEFAULT_HALF_DAY_BLOCKS
 
@@ -81,6 +83,15 @@ class SchedulingConfig:
         """验证配置的有效性"""
         errors = []
 
+        seen_campuses = {}
+        for group_index, group in enumerate(self.campus_equivalence_groups, start=1):
+            if len(group) < 2:
+                errors.append(f"等价校区组 {group_index} 至少需要两个校区")
+            for campus in group:
+                if campus in seen_campuses and seen_campuses[campus] != group_index:
+                    errors.append(f"校区「{campus}」不能同时属于多个等价组")
+                seen_campuses[campus] = group_index
+
         # 验证时段划分
         if not self.half_day_blocks:
             errors.append("半天时段划分不能为空")
@@ -106,6 +117,14 @@ class SchedulingConfig:
             errors.append("最大解数量应大于0")
 
         return errors
+
+    def normalize_campus(self, campus: Optional[str]) -> str:
+        """返回用于冲突和评分比较的校区值。"""
+        value = (campus or "").strip()
+        for group in self.campus_equivalence_groups:
+            if value in group:
+                return group[0]
+        return value
 
     def get_time_preference_score(self, start_section: int) -> float:
         """获取时间段偏好分数（0-1，越高越好）"""
@@ -171,6 +190,7 @@ class SchedulingConfig:
         """转换为字典格式"""
         return {
             "campus_conflict_mode": self.campus_conflict_mode.value,
+            "campus_equivalence_groups": [list(group) for group in self.campus_equivalence_groups],
             "half_day_blocks": [list(block) for block in self.half_day_blocks],
             "credit_constraint_mode": self.credit_constraint_mode.value,
             "allow_credit_overflow": self.allow_credit_overflow,
@@ -187,6 +207,12 @@ class SchedulingConfig:
     @classmethod
     def from_dict(cls, data: Dict) -> "SchedulingConfig":
         """从字典创建配置对象"""
+        raw_groups = data.get("campus_equivalence_groups") or []
+        equivalence_groups = tuple(
+            tuple(dict.fromkeys(str(campus).strip() for campus in group if str(campus).strip()))
+            for group in raw_groups
+            if isinstance(group, (list, tuple))
+        )
         raw_blocks = data.get("half_day_blocks")
         blocks = (
             tuple((str(label), int(start), int(end)) for label, start, end in raw_blocks)
@@ -197,6 +223,7 @@ class SchedulingConfig:
             campus_conflict_mode=CampusConflictMode(
                 data.get("campus_conflict_mode", "daily")
             ),
+            campus_equivalence_groups=equivalence_groups,
             half_day_blocks=blocks,
             credit_constraint_mode=CreditConstraintMode(
                 data.get("credit_constraint_mode", "optimal")

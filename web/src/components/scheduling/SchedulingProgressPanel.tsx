@@ -90,7 +90,7 @@ export function SchedulingProgressPanel({
       {/* Error */}
       {error && (
         <div className="mt-3 flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm"
-             style={{ borderColor: '#fca5a5', background: '#fff5f5', color: '#991b1b' }}
+             style={{ borderColor: 'var(--danger-border)', background: 'var(--danger-bg)', color: 'var(--danger-text)' }}
              role="alert">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           {error}

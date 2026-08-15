@@ -105,7 +105,7 @@ export function SchedulingActionBar({
             },
           ].map(({ label, value }) => (
             <div key={label} className="rounded-lg border px-3 py-2.5"
-                 style={{ borderColor: 'var(--border-subtle)', background: '#faf9f6' }}>
+                 style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-subtle)' }}>
               <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.2em]"
                  style={{ color: 'var(--text-muted)' }}>{label}</p>
               {value}
@@ -121,7 +121,7 @@ export function SchedulingActionBar({
         )}
 
         {blockedReason && (
-          <p className="text-xs" style={{ color: '#991b1b' }}>
+          <p className="text-xs" style={{ color: 'var(--danger-text)' }}>
             {blockedReason}
           </p>
         )}

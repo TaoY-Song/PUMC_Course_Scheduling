@@ -3,55 +3,68 @@
 @tailwind utilities;
 
 /* ─── Design tokens ─────────────────────────────────────────────────────────
-   PUMC Scheduling — precision instrument palette
-   Inspired by laboratory equipment vernacular: teal-deep, ceramic-white,
-   ruled-paper grid lines, monospace instruments.
+   PUMC Scheduling - institutional registry palette
+   Cool porcelain surfaces, one restrained PUMC green accent, and ledger-like
+   rules keep a dense workbench calm without flattening its hierarchy.
 ────────────────────────────────────────────────────────────────────────────── */
 :root {
-  /* Surface */
-  --bg-base:   #f4f2ed;   /* warm near-white, like uncoated specimen paper */
-  --bg-card:   #ffffff;
-  --bg-sidebar: #071615;  /* deep sea-teal, the colour of autoclaved steel */
+  /* Surfaces */
+  --bg-base:       #f2f5f4;
+  --bg-card:       #ffffff;
+  --bg-subtle:     #f7f9f8;
+  --bg-sidebar:    #102d2a;
 
   /* Text */
-  --text-primary:   #141e1c;
-  --text-secondary: #3a4d4a;
-  --text-muted:     #6b807c;
-  --text-on-dark:   #e8eeec;
-  --text-on-dark-muted: #8faaa6;
+  --text-primary:       #172321;
+  --text-secondary:     #3b514d;
+  --text-muted:         #687a76;
+  --text-on-dark:       #edf5f2;
+  --text-on-dark-muted: #9bb5ae;
 
-  /* Accent */
-  --accent-ui:    #0d9488;   /* teal-600 — active states, links */
-  --accent-light: #ccfbf1;   /* teal-100 */
-  --accent-dark:  #0f766e;   /* teal-700 */
+  /* Accent and semantic surfaces */
+  --accent-ui:      #0b554f;
+  --accent-light:   #e2efeb;
+  --accent-dark:    #083f3b;
+  --accent-info:    #426b7a;
+  --success-bg:     #edf8f4;
+  --success-border: #b9ddd1;
+  --success-text:   #0b6356;
+  --warning-bg:     #fff8e7;
+  --warning-border: #ecd58f;
+  --warning-text:   #875d08;
+  --danger-bg:      #fff1ef;
+  --danger-border:  #edc2bd;
+  --danger-text:    #9b302b;
 
-  /* Border */
-  --border-base:  #d8d2c8;
-  --border-card:  #e4dfd6;
-  --border-subtle:#edeae4;
-  --border-dark:  rgba(255,255,255,0.10);
+  /* Border and elevation */
+  --border-base:   #c8d5d1;
+  --border-card:   #d7e0dd;
+  --border-subtle: #e7eeeb;
+  --border-dark:   rgba(255,255,255,0.12);
+  --shadow-surface: 0 1px 2px rgba(17, 48, 43, 0.06), 0 10px 24px rgba(17, 48, 43, 0.035);
+  --shadow-control: 0 1px 2px rgba(17, 48, 43, 0.10);
 
   /* Tailwind CSS-var bridge */
-  --background: 40 13% 93%;
-  --foreground: 172 18% 10%;
-  --card: 0 0% 100%;
-  --card-foreground: 172 18% 10%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 172 18% 10%;
-  --primary: 174 76% 32%;
+  --background: 160 13% 95%;
+  --foreground: 165 18% 12%;
+  --card: 150 20% 100%;
+  --card-foreground: 165 18% 12%;
+  --popover: 150 20% 100%;
+  --popover-foreground: 165 18% 12%;
+  --primary: 174 77% 19%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 40 13% 88%;
-  --secondary-foreground: 172 18% 10%;
-  --muted: 40 10% 90%;
-  --muted-foreground: 170 9% 44%;
-  --accent: 174 76% 32%;
+  --secondary: 160 12% 91%;
+  --secondary-foreground: 165 18% 12%;
+  --muted: 150 12% 94%;
+  --muted-foreground: 165 9% 44%;
+  --accent: 174 77% 19%;
   --accent-foreground: 0 0% 100%;
   --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 100%;
-  --border: 38 16% 82%;
-  --input: 38 16% 82%;
-  --ring: 174 76% 32%;
-  --radius: 0.625rem;
+  --border: 160 16% 84%;
+  --input: 160 16% 84%;
+  --ring: 174 77% 19%;
+  --radius: 0.5rem;
 }
 
 /* ─── Base reset ──────────────────────────────────────────────────────────── */
@@ -71,10 +84,10 @@
     background-color: var(--bg-base);
     color: var(--text-primary);
     font-family:
-      "Inter", "SF Pro Text", "PingFang SC", "Hiragino Sans GB",
-      "Microsoft YaHei UI", system-ui, sans-serif;
+      "Microsoft YaHei UI", "PingFang SC", "Segoe UI", system-ui, sans-serif;
     font-size: 14px;
     line-height: 1.6;
+    font-variant-numeric: tabular-nums;
   }
 
   #root {
@@ -83,7 +96,7 @@
     flex-direction: column;
   }
 
-  /* focus ring — teal halo */
+  /* Keep keyboard focus visible without adding a glow to resting controls. */
   :focus-visible {
     outline: 2px solid var(--accent-ui);
     outline-offset: 2px;
@@ -108,36 +121,42 @@
 
 /* ─── Utility layer ───────────────────────────────────────────────────────── */
 @layer utilities {
-  /* Sidebar laboratory grid — signature texture */
+  /* The SVG in AppShell is the single sidebar texture layer. */
   .sidebar-grid {
-    background-image:
-      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
-    background-size: 28px 28px;
+    background-image: none;
   }
 
-  /* Content area subtle ruled lines */
+  .sidebar-nav-link:hover {
+    background: rgba(255,255,255,0.055);
+  }
+
+  .app-topbar {
+    background: rgba(247, 250, 249, 0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 1px 0 rgba(17, 48, 43, 0.03);
+  }
+
+  /* A low-contrast ledger rhythm gives the open canvas a physical scale. */
   .content-ruled {
     background-image:
-      linear-gradient(rgba(0,0,0,0.018) 1px, transparent 1px);
-    background-size: 100% 28px;
-    background-position: 0 12px;
+      linear-gradient(rgba(23, 55, 49, 0.025) 1px, transparent 1px);
+    background-size: 100% 32px;
+    background-position: 0 16px;
   }
 
-  /* Frosted glass card */
+  /* Kept for compatibility with existing callers; panels stay opaque. */
   .glass-card {
-    background: rgba(255,255,255,0.82);
-    backdrop-filter: blur(16px) saturate(1.4);
-    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    background: var(--bg-card);
   }
 
-  /* Table — clean clinical lines */
+  /* Table - clean registry lines */
   .clinical-table th {
     @apply text-[11px] font-semibold uppercase tracking-widest;
     color: var(--text-muted);
     padding: 10px 14px;
     border-bottom: 1px solid var(--border-card);
-    background: #f9f8f5;
+    background: var(--bg-subtle);
   }
   .clinical-table td {
     padding: 12px 14px;
@@ -147,77 +166,119 @@
     border-bottom: none;
   }
   .clinical-table tbody tr {
-    transition: background 120ms;
+    transition: background-color 140ms ease;
   }
   .clinical-table tbody tr:hover {
-    background: #f5f3ee;
+    background: #f3f8f6;
   }
 }
 
 /* ─── Component layer ─────────────────────────────────────────────────────── */
 @layer components {
+  .surface-panel {
+    background: var(--bg-card);
+    box-shadow: var(--shadow-surface);
+  }
+
+  .surface-header {
+    background: var(--bg-subtle);
+  }
+
   /* Primary button */
   .btn-primary {
-    @apply inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-all;
+    @apply inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white;
     background: var(--accent-ui);
     border: 1px solid var(--accent-dark);
+    box-shadow: var(--shadow-control), inset 0 1px 0 rgba(255,255,255,0.16);
+    transition: background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
   }
-  .btn-primary:hover { background: var(--accent-dark); }
+  .btn-primary:hover {
+    background: var(--accent-dark);
+    box-shadow: 0 2px 5px rgba(17, 48, 43, 0.14), inset 0 1px 0 rgba(255,255,255,0.12);
+  }
+  .btn-primary:active {
+    transform: translateY(1px);
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.18);
+  }
   .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
 
   /* Ghost button */
   .btn-ghost {
-    @apply inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-all;
+    @apply inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium;
     border-color: var(--border-base);
     color: var(--text-secondary);
-    background: transparent;
+    background: rgba(255,255,255,0.55);
+    transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
   }
   .btn-ghost:hover {
-    background: rgba(0,0,0,0.04);
-    border-color: var(--border-base);
+    background: var(--bg-card);
+    border-color: #aebfba;
+  }
+  .btn-ghost:active {
+    transform: translateY(1px);
   }
   .btn-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
 
   /* Danger ghost */
   .btn-danger {
-    @apply inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-all;
-    border-color: #fca5a5;
-    color: #991b1b;
-    background: #fff5f5;
+    @apply inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium;
+    border-color: var(--danger-border);
+    color: var(--danger-text);
+    background: var(--danger-bg);
+    transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
   }
-  .btn-danger:hover { background: #fee2e2; }
+  .btn-danger:hover { background: #ffe8e5; }
+  .btn-danger:active { transform: translateY(1px); }
 
   /* Input */
   .input-base {
-    @apply w-full rounded-lg border px-3 py-2 text-sm outline-none transition-all;
+    @apply w-full rounded-lg border px-3 py-2 text-sm outline-none;
     border-color: var(--border-base);
     background: var(--bg-card);
     color: var(--text-primary);
+    box-shadow: inset 0 1px 2px rgba(17, 48, 43, 0.035);
+    transition: border-color 160ms ease, box-shadow 160ms ease;
   }
   .input-base::placeholder { color: var(--text-muted); }
   .input-base:focus {
     border-color: var(--accent-ui);
-    box-shadow: 0 0 0 3px rgba(13,148,136,0.12);
+    box-shadow: 0 0 0 3px rgba(11,85,79,0.12), inset 0 1px 2px rgba(17, 48, 43, 0.035);
   }
 
   /* Tag / Pill */
   .tag {
     @apply inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium;
+    line-height: 1.35;
   }
-  .tag-teal  { background: #ccfbf1; color: #0f766e; border-color: #99f6e4; }
-  .tag-amber { background: #fef3c7; color: #92400e; border-color: #fde68a; }
-  .tag-red   { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
-  .tag-gray  { background: #f3f4f6; color: #374151; border-color: #d1d5db; }
-  .tag-blue  { background: #dbeafe; color: #1e40af; border-color: #bfdbfe; }
+  .tag-teal  { background: var(--accent-light); color: var(--accent-ui); border-color: #bfd8d1; }
+  .tag-amber { background: var(--warning-bg); color: var(--warning-text); border-color: var(--warning-border); }
+  .tag-red   { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-border); }
+  .tag-gray  { background: #f1f5f3; color: #42534f; border-color: #d4dfdb; }
+  .tag-blue  { background: #edf4f7; color: var(--accent-info); border-color: #c7dbe2; }
 
   /* Status dot */
   .dot-online  { @apply h-2 w-2 rounded-full bg-emerald-400; }
   .dot-loading { @apply h-2 w-2 rounded-full bg-amber-400 animate-pulse; }
   .dot-offline { @apply h-2 w-2 rounded-full bg-red-400; }
 
-  /* Metric card variants */
-  .metric-pine  { background: linear-gradient(135deg, #0a1f1e 0%, #134e48 100%); color: #ccfbf1; }
-  .metric-teal  { background: linear-gradient(135deg, #0d9488 0%, #14b8a6 100%); color: white; }
-  .metric-sand  { background: #f9f8f4; color: var(--text-primary); border: 1px solid var(--border-card); }
-  .metric-amber { background: linear-gradient(135deg, #78350f 0%, #b45309 100%); color: #fef3c7; }
+  /* Metric cards use one material; tone is a quiet registration rule. */
+  .metric-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--border-card);
+    color: var(--text-primary);
+    background: var(--bg-card);
+    box-shadow: var(--shadow-surface);
+  }
+  .metric-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 3px;
+    background: var(--metric-accent, var(--accent-ui));
+  }
+  .metric-pine  { --metric-accent: var(--accent-ui); background: #f0f7f5; }
+  .metric-teal  { --metric-accent: var(--accent-info); background: #f1f7f8; }
+  .metric-sand  { --metric-accent: #aebfba; }
+  .metric-amber { --metric-accent: #b8862b; background: #fffaf0; }
 }

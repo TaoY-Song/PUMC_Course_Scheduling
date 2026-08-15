@@ -95,8 +95,8 @@ export function SettingsPage() {
         <div
           className="flex items-start gap-2.5 rounded-lg border px-4 py-3 text-sm"
           style={message.type === 'ok'
-            ? { borderColor: '#99f6e4', background: '#f0fdfb', color: '#0f766e' }
-            : { borderColor: '#fca5a5', background: '#fff5f5', color: '#991b1b' }}
+            ? { borderColor: 'var(--success-border)', background: 'var(--success-bg)', color: 'var(--success-text)' }
+            : { borderColor: 'var(--danger-border)', background: 'var(--danger-bg)', color: 'var(--danger-text)' }}
           role={message.type === 'err' ? 'alert' : 'status'}
           aria-live="polite"
         >

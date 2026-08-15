@@ -42,6 +42,7 @@ export interface SelectedCourse {
 export interface SchedulingConfig {
   credit_constraint_mode: CreditConstraintMode;
   campus_conflict_mode: CampusConflictMode;
+  campus_equivalence_groups: string[][];
   max_solutions: number;
   time_limit: number;
   credit_overflow: number;

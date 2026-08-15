@@ -1,9 +1,10 @@
-import { RotateCcw, Save } from 'lucide-react';
+import { Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
 import type { SchedulingConfig } from '../../types/models';
 import { Pill, Surface } from '../workbench/atoms';
 
 interface SchedulingConfigPanelProps {
   value: SchedulingConfig;
+  campuses: string[];
   isDirty: boolean;
   isSaving: boolean;
   onChange: (next: SchedulingConfig) => void;
@@ -11,22 +12,69 @@ interface SchedulingConfigPanelProps {
   onReset: () => void;
 }
 
-function updateConfig(
+function updateConfig<K extends keyof SchedulingConfig>(
   value: SchedulingConfig,
-  key: keyof SchedulingConfig,
-  nextValue: string | number,
+  key: K,
+  nextValue: SchedulingConfig[K],
 ): SchedulingConfig {
   return { ...value, [key]: nextValue };
 }
 
 export function SchedulingConfigPanel({
   value,
+  campuses,
   isDirty,
   isSaving,
   onChange,
   onSave,
   onReset,
 }: SchedulingConfigPanelProps) {
+  const campusGroups = value.campus_equivalence_groups;
+  const campusOptions = Array.from(new Set([...campuses, ...campusGroups.flat()]));
+  const assignedCampuses = new Set(campusGroups.flat());
+  const invalidCampusGroup = campusGroups.some((group) => group.length < 2)
+    || campusGroups.some((group, groupIndex) => group.some((campus) =>
+      campusGroups.some((other, otherIndex) => otherIndex !== groupIndex && other.includes(campus))
+    ));
+  const ungroupedCampuses = campuses.filter((campus) => !assignedCampuses.has(campus));
+
+  const addCampusGroup = () => {
+    if (ungroupedCampuses.length < 2) {
+      return;
+    }
+    onChange(updateConfig(value, 'campus_equivalence_groups', [
+      ...campusGroups,
+      ungroupedCampuses.slice(0, 2),
+    ]));
+  };
+
+  const removeCampusGroup = (groupIndex: number) => {
+    onChange(updateConfig(
+      value,
+      'campus_equivalence_groups',
+      campusGroups.filter((_, index) => index !== groupIndex),
+    ));
+  };
+
+  const toggleCampus = (groupIndex: number, campus: string, checked: boolean) => {
+    if (
+      checked
+      && campusGroups.some((group, index) => index !== groupIndex && group.includes(campus))
+    ) {
+      return;
+    }
+
+    const nextGroups = campusGroups.map((group, index) => {
+      if (index !== groupIndex) {
+        return group;
+      }
+      return checked
+        ? [...group, campus]
+        : group.filter((item) => item !== campus);
+    });
+    onChange(updateConfig(value, 'campus_equivalence_groups', nextGroups));
+  };
+
   return (
     <Surface>
       <div className="mb-4 flex items-center justify-between">
@@ -42,7 +90,7 @@ export function SchedulingConfigPanel({
             <p className="mb-2 text-xs font-medium uppercase tracking-[0.15em]"
                style={{ color: 'var(--text-muted)' }}>学分约束</p>
             <div className="grid grid-cols-2 gap-1.5 rounded-lg border p-1"
-                 style={{ borderColor: 'var(--border-card)', background: '#f8f7f4' }}>
+                 style={{ borderColor: 'var(--border-card)', background: 'var(--bg-subtle)' }}>
               {(['REQUIRED', 'OPTIMAL'] as const).map((mode) => {
                 const active = value.credit_constraint_mode === mode;
                 return (
@@ -71,7 +119,11 @@ export function SchedulingConfigPanel({
                style={{ color: 'var(--text-muted)' }}>校区冲突</p>
             <select
               value={value.campus_conflict_mode}
-              onChange={(e) => onChange(updateConfig(value, 'campus_conflict_mode', e.target.value))}
+              onChange={(e) => onChange(updateConfig(
+                value,
+                'campus_conflict_mode',
+                e.target.value as SchedulingConfig['campus_conflict_mode'],
+              ))}
               className="input-base"
             >
               <option value="DAILY">DAILY — 同一天不得跳校区</option>
@@ -89,6 +141,115 @@ export function SchedulingConfigPanel({
             </p>
           </div>
         </div>
+
+        {value.campus_conflict_mode === 'DISABLED' ? (
+          <div
+            className="rounded-lg border px-3 py-2.5 text-[11px] leading-5"
+            style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-subtle)', color: 'var(--text-muted)' }}
+          >
+            当前已禁用校区冲突检查。已保存的等价校区组会保留，切回 DAILY 或 PERIOD 后继续生效。
+          </div>
+        ) : (
+          <div
+            className="rounded-lg border p-3"
+            style={{ borderColor: 'var(--border-card)', background: 'var(--bg-subtle)' }}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>等价校区组</p>
+                <p className="mt-0.5 text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>
+                  当前已选课程中的组内校区，会按同一校区判断。
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn-ghost shrink-0 px-2.5 py-1.5 text-[11px]"
+                onClick={addCampusGroup}
+                disabled={ungroupedCampuses.length < 2}
+                title={ungroupedCampuses.length < 2 ? '至少需要两个未分组校区' : '新建等价校区组'}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                新建组
+              </button>
+            </div>
+
+            {campusGroups.length === 0 ? (
+              <p className="mt-3 rounded-md border border-dashed px-3 py-2 text-[11px]"
+                 style={{ borderColor: 'var(--border-base)', color: 'var(--text-muted)' }}>
+                {campuses.length < 2
+                  ? '当前已选课程中还没有至少两个不同校区。'
+                  : '暂无等价组。点击“新建组”后选择需要视为同一校区的课程地点。'}
+              </p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {campusGroups.map((group, groupIndex) => (
+                  <div
+                    key={`campus-group-${groupIndex}`}
+                    role="group"
+                    aria-label={`等价组 ${groupIndex + 1}`}
+                    className="rounded-md border bg-white/70 px-3 py-2.5"
+                    style={{ borderColor: 'var(--border-subtle)' }}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                        等价组 {groupIndex + 1}
+                      </p>
+                      <button
+                        type="button"
+                        className="btn-ghost px-2 py-1 text-[11px] text-rose-600"
+                        onClick={() => removeCampusGroup(groupIndex)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        删除
+                      </button>
+                    </div>
+                    <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+                      {campusOptions.map((campus) => {
+                        const checked = group.includes(campus);
+                        const inAnotherGroup = campusGroups.some(
+                          (other, otherIndex) => otherIndex !== groupIndex && other.includes(campus),
+                        );
+                        const isStale = !campuses.includes(campus);
+                        return (
+                          <label
+                            key={campus}
+                            className="flex min-w-0 items-center gap-2 rounded-md border px-2 py-1.5 text-[11px]"
+                            style={{
+                              borderColor: checked ? 'var(--accent-ui)' : 'var(--border-subtle)',
+                              background: checked ? 'var(--accent-light)' : 'var(--bg-card)',
+                              color: inAnotherGroup ? 'var(--text-muted)' : 'var(--text-secondary)',
+                              opacity: inAnotherGroup ? 0.55 : 1,
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={inAnotherGroup}
+                              onChange={(event) => toggleCampus(groupIndex, campus, event.target.checked)}
+                              className="h-3.5 w-3.5 accent-[var(--accent-ui)]"
+                            />
+                            <span className="min-w-0 flex-1 truncate">{campus}</span>
+                            {isStale && <span className="shrink-0 text-[10px] opacity-70">当前未选</span>}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    {group.length < 2 && (
+                      <p className="mt-2 text-[11px]" style={{ color: 'var(--danger-text)' }}>
+                        每个等价组至少需要选择两个校区。
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {invalidCampusGroup && (
+              <p className="mt-2 text-[11px]" style={{ color: 'var(--danger-text)' }}>
+                请先修正等价校区组后再保存配置。
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Numeric fields */}
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
@@ -128,8 +289,8 @@ export function SchedulingConfigPanel({
         {/* Footer */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3"
              style={{ borderColor: 'var(--border-subtle)' }}>
-          <Pill tone={isDirty ? 'warning' : 'success'}>
-            {isDirty ? '有未保存修改' : '配置已同步'}
+          <Pill tone={invalidCampusGroup ? 'danger' : isDirty ? 'warning' : 'success'}>
+            {invalidCampusGroup ? '等价组配置无效' : isDirty ? '有未保存修改' : '配置已同步'}
           </Pill>
           <div className="flex gap-2">
             <button type="button" onClick={onReset} className="btn-ghost">
@@ -139,7 +300,7 @@ export function SchedulingConfigPanel({
             <button
               type="button"
               onClick={onSave}
-              disabled={!isDirty || isSaving}
+              disabled={!isDirty || isSaving || invalidCampusGroup}
               className="btn-primary"
             >
               <Save className="h-3.5 w-3.5" />

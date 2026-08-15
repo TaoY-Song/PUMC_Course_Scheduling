@@ -12,12 +12,12 @@ interface SurfaceProps {
 export function Surface({ title, eyebrow, children, className = '', action }: SurfaceProps) {
   return (
     <section
-      className={`rounded-xl border bg-white shadow-sm ${className}`}
+      className={`surface-panel rounded-lg border ${className}`}
       style={{ borderColor: 'var(--border-card)' }}
     >
       {(title || eyebrow || action) && (
         <div
-          className="flex items-center justify-between gap-4 px-5 py-3.5"
+          className="surface-header flex items-center justify-between gap-4 px-5 py-3.5"
           style={{ borderBottom: '1px solid var(--border-subtle)' }}
         >
           <div>
@@ -49,7 +49,7 @@ interface MetricCardProps {
 }
 
 export function MetricCard({ label, value, hint, tone = 'sand' }: MetricCardProps) {
-  const base = 'rounded-xl px-4 py-4 shadow-sm';
+  const base = 'metric-card rounded-lg px-4 py-4';
   const toneMap: Record<string, string> = {
     pine:  'metric-pine',
     teal:  'metric-teal',

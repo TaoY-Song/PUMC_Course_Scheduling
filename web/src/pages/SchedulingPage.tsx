@@ -37,15 +37,21 @@ import type { ScheduleResult, SchedulingConfig, SelectedCourse } from '../types/
 const DEFAULT_CONFIG: SchedulingConfig = {
   credit_constraint_mode: 'OPTIMAL',
   campus_conflict_mode: 'DAILY',
+  campus_equivalence_groups: [],
   max_solutions: 1,
   time_limit: 60,
   credit_overflow: 1.0,
 };
 
+function sameCampusGroups(left: string[][], right: string[][]) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function sameConfig(left: SchedulingConfig, right: SchedulingConfig) {
   return (
     left.credit_constraint_mode === right.credit_constraint_mode &&
     left.campus_conflict_mode === right.campus_conflict_mode &&
+    sameCampusGroups(left.campus_equivalence_groups, right.campus_equivalence_groups) &&
     left.max_solutions === right.max_solutions &&
     left.time_limit === right.time_limit &&
     left.credit_overflow === right.credit_overflow
@@ -175,6 +181,16 @@ export function SchedulingPage() {
   const isDirty = useMemo(() => !sameConfig(savedConfig, draftConfig), [draftConfig, savedConfig]);
   const resultCourses = result?.selected_courses ?? [];
   const taskId = taskRuntime.taskId;
+  const availableCampuses = useMemo(
+    () => Array.from(
+      new Set(
+        selectedCourses
+          .map((course) => (course.course.campus || '').trim())
+          .filter(Boolean),
+      ),
+    ).sort((left, right) => left.localeCompare(right, 'zh-CN')),
+    [selectedCourses],
+  );
 
   const stopPolling = useCallback(() => {
     if (pollingTimerRef.current !== null) {
@@ -655,7 +671,7 @@ export function SchedulingPage() {
         <div
           role="alert"
           className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border px-4 py-3 text-sm"
-          style={{ borderColor: '#fca5a5', background: '#fff5f5', color: '#991b1b' }}
+          style={{ borderColor: 'var(--danger-border)', background: 'var(--danger-bg)', color: 'var(--danger-text)' }}
         >
           <span className="font-medium">
             {unsetCategoryCourses.length} 门课程未设置类别，无法开始排课
@@ -674,6 +690,7 @@ export function SchedulingPage() {
         <div className="space-y-4">
           <SchedulingConfigPanel
             value={draftConfig}
+            campuses={availableCampuses}
             isDirty={isDirty}
             isSaving={isSaving}
             onChange={setDraftConfig}
@@ -745,14 +762,14 @@ export function SchedulingPage() {
 
       {error ? (
         <div role="alert" className="flex items-start gap-2 rounded-lg border px-4 py-3 text-sm"
-             style={{ borderColor: '#fca5a5', background: '#fff5f5', color: '#991b1b' }}>
+             style={{ borderColor: 'var(--danger-border)', background: 'var(--danger-bg)', color: 'var(--danger-text)' }}>
           {error}
         </div>
       ) : null}
 
       {notice ? (
         <div role="status" aria-live="polite" className="flex items-start gap-2 rounded-lg border px-4 py-3 text-sm"
-             style={{ borderColor: '#99f6e4', background: '#f0fdfb', color: '#0f766e' }}>
+             style={{ borderColor: 'var(--success-border)', background: 'var(--success-bg)', color: 'var(--success-text)' }}>
           {notice}
         </div>
       ) : null}

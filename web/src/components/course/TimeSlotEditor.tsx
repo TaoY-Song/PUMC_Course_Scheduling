@@ -192,7 +192,7 @@ export function TimeSlotEditor({
 
       {/* 例外周：这个时段是某个常规时段在特定几周的替代安排 */}
       {canBeException && (
-        <div className="rounded-lg border p-4" style={{ borderColor: 'var(--border-subtle)', background: '#faf9f6' }}>
+        <div className="rounded-lg border p-4" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-subtle)' }}>
           <label className="flex cursor-pointer items-start gap-2.5">
             <input
               type="checkbox"
@@ -246,7 +246,7 @@ export function TimeSlotEditor({
         </div>
       )}
 
-      <div className="rounded-lg border p-4" style={{ borderColor: 'var(--border-subtle)', background: '#faf9f6' }}>
+      <div className="rounded-lg border p-4" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-subtle)' }}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -313,7 +313,7 @@ export function TimeSlotEditor({
 
       {error && (
         <div role="alert" className="rounded-lg border px-4 py-3 text-sm"
-             style={{ borderColor: '#fca5a5', background: '#fff5f5', color: '#991b1b' }}>
+             style={{ borderColor: 'var(--danger-border)', background: 'var(--danger-bg)', color: 'var(--danger-text)' }}>
           {error}
         </div>
       )}

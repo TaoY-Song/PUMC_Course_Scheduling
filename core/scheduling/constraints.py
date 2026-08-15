@@ -117,13 +117,17 @@ class ConstraintChecker:
         conflicts = []
 
         # 收集所有校区
-        campuses = set(course.course.campus for course, _ in day_courses)
+        campuses = {
+            self.config.normalize_campus(course.course.campus)
+            for course, _ in day_courses
+        }
 
         if len(campuses) > 1:
             # 找到第一个跨校区的课程对
             courses_by_campus = defaultdict(list)
             for course, slot in day_courses:
-                courses_by_campus[course.course.campus].append((course, slot))
+                campus_key = self.config.normalize_campus(course.course.campus)
+                courses_by_campus[campus_key].append((course, slot))
 
             campus_list = list(campuses)
             for i in range(len(campus_list)):
@@ -136,7 +140,10 @@ class ConstraintChecker:
                         conflict_type="campus",
                         course1=course1.course,
                         course2=course2.course,
-                        description=f"校区冲突：{campus1} -> {campus2}（日内模式不允许跨校区）",
+                        description=(
+                            f"校区冲突：{course1.course.campus} -> {course2.course.campus}"
+                            "（日内模式不允许跨校区）"
+                        ),
                         severity="high",
                     )
                     conflicts.append(conflict)
@@ -169,7 +176,9 @@ class ConstraintChecker:
                 course2, slot2 = day_courses[j]
 
                 # 同校区无需转场
-                if course1.course.campus == course2.course.campus:
+                if self.config.normalize_campus(course1.course.campus) == self.config.normalize_campus(
+                    course2.course.campus
+                ):
                     continue
 
                 # 必须周次重叠才会真实冲突

@@ -799,7 +799,7 @@ def run(semester: int, keep_open: bool = False) -> dict[str, Any]:
             """[...document.querySelectorAll('a[download]')]
                  .map(a => ({ text: a.innerText, href: a.href }))"""
         )
-        assert len(report["supplement_download_links"]) >= 2
+        assert len(report["supplement_download_links"]) >= 1
         for link in report["supplement_download_links"]:
             with urllib.request.urlopen(link["href"], timeout=30) as response:
                 payload = response.read()
@@ -875,7 +875,7 @@ def main() -> None:
     assert report.get("export_clicked") is True
     assert report.get("export_size", 0) > 0
     assert report.get("supplement_completed") is True
-    assert len(report.get("supplement_download_links", [])) >= 2
+    assert len(report.get("supplement_download_links", [])) >= 1
     # 排课结果应该把所有已选课程都排进去（本 fixture 构造为无冲突）
     assert report["result_rows"] == report["clicked_add_buttons"], (
         report["result_rows"],

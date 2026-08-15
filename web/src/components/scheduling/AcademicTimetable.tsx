@@ -72,7 +72,7 @@ export function AcademicTimetable({
           <div className="overflow-x-auto rounded-lg border" style={{ borderColor: 'var(--border-card)' }}>
             <div className="min-w-[980px]">
               <div className="grid grid-cols-[3.5rem_repeat(7,minmax(8.25rem,1fr))] border-b"
-                   style={{ borderColor: 'var(--border-card)', background: '#f8f7f4' }}>
+                   style={{ borderColor: 'var(--border-card)', background: 'var(--bg-subtle)' }}>
                 <div className="border-r px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.18em]"
                      style={{ borderColor: 'var(--border-card)', color: 'var(--text-muted)' }}>
                   节次
@@ -86,7 +86,7 @@ export function AcademicTimetable({
               </div>
 
               <div className="flex">
-                <div className="relative w-14 shrink-0 border-r" style={{ height: boardHeight, borderColor: 'var(--border-card)', background: '#f8f7f4' }}>
+                <div className="relative w-14 shrink-0 border-r" style={{ height: boardHeight, borderColor: 'var(--border-card)', background: 'var(--bg-subtle)' }}>
                   {Array.from({ length: rowCount }, (_, index) => (
                     <div key={index} className="absolute left-0 flex w-full items-center justify-center border-b font-mono text-[10px]"
                          style={{ top: index * ROW_HEIGHT, height: ROW_HEIGHT, borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}>
@@ -162,7 +162,7 @@ export function AcademicTimetable({
 
 function CourseBucket({ title, courses, online = false }: { title: string; courses: SelectedCourse[]; online?: boolean }) {
   return (
-    <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: '#faf9f6' }}>
+    <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-subtle)' }}>
       <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--text-muted)' }}>{title}</p>
       {courses.length === 0 ? (
         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>无</p>

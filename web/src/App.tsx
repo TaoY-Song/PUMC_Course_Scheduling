@@ -91,28 +91,28 @@ function AppShell({
       {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
       <aside
         className="sidebar-grid relative hidden w-56 shrink-0 flex-col lg:flex"
-        style={{ background: '#071615', color: '#e8eeec' }}
+        style={{ background: 'var(--bg-sidebar)', color: 'var(--text-on-dark)' }}
       >
         <GridPattern />
 
         {/* Logo area */}
         <div className="relative z-10 flex flex-col gap-1 border-b px-5 pb-5 pt-6"
-             style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+             style={{ borderColor: 'var(--border-dark)' }}>
           <div className="flex items-center gap-2.5">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md overflow-hidden border"
+            <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-lg border"
                  style={{ borderColor: 'rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.06)' }}>
-              <img src="/PUMClogo.ico" alt="" className="h-5 w-5 object-contain" />
+              <img src="/PUMClogo.ico" alt="" className="h-8 w-8 object-contain" />
             </div>
             <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em]"
-                  style={{ color: '#8faaa6' }}>
+                  style={{ color: 'var(--text-on-dark-muted)' }}>
               PUMC
             </span>
           </div>
-          <p className="mt-2 font-mono text-base font-semibold leading-tight tracking-tight"
-             style={{ color: '#e8eeec' }}>
+          <p className="mt-2 text-base font-semibold leading-tight tracking-tight"
+             style={{ color: 'var(--text-on-dark)' }}>
             排课系统
           </p>
-          <p className="font-mono text-[10px]" style={{ color: '#4d7770' }}>v2.0.0</p>
+          <p className="font-mono text-[10px]" style={{ color: 'var(--text-on-dark-muted)' }}>v3.0.0</p>
         </div>
 
         {/* Nav */}
@@ -123,15 +123,15 @@ function AppShell({
               to={to}
               className={({ isActive }) =>
                 [
-                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150',
+                  'sidebar-nav-link flex items-center gap-3 rounded-lg border-l-2 border-transparent px-3 py-2.5 text-sm font-medium transition-all duration-150',
                   isActive
                     ? 'text-white'
                     : 'hover:bg-white/5',
                 ].join(' ')
               }
               style={({ isActive }) => isActive
-                ? { background: 'var(--accent-ui)', color: 'white' }
-                : { color: '#8faaa6' }}
+                ? { background: 'rgba(255,255,255,0.09)', borderLeftColor: 'var(--accent-light)', color: 'var(--text-on-dark)' }
+                : { color: 'var(--text-on-dark-muted)' }}
             >
               {({ isActive }) => (
                 <>
@@ -148,7 +148,7 @@ function AppShell({
 
         {/* Status footer */}
         <div className="relative z-10 mt-auto border-t px-4 py-4"
-             style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+             style={{ borderColor: 'var(--border-dark)' }}>
           <div className="flex items-center gap-2.5">
             {loading
               ? <span className="dot-loading" />
@@ -156,19 +156,19 @@ function AppShell({
                 ? <span className="dot-offline" />
                 : <span className="dot-online" />}
             <div>
-              <p className="text-[11px] font-medium" style={{ color: '#8faaa6' }}>
+              <p className="text-[11px] font-medium" style={{ color: 'var(--text-on-dark-muted)' }}>
                 {loading ? '连接中…' : error ? '后端离线' : `${health?.status ?? 'healthy'}`}
               </p>
               {!loading && !error && (
-                <p className="text-[10px]" style={{ color: '#3d5c58' }}>
+                <p className="text-[10px]" style={{ color: 'rgba(155,181,174,0.68)' }}>
                   v{health?.version ?? '1.0.0'} · local
                 </p>
               )}
             </div>
             <div className="ml-auto">
               {error
-                ? <WifiOff className="h-3.5 w-3.5" style={{ color: '#f87171', opacity: 0.8 }} />
-                : <Wifi className="h-3.5 w-3.5" style={{ color: '#4ade80', opacity: loading ? 0.4 : 0.8 }} />}
+                ? <WifiOff className="h-3.5 w-3.5" style={{ color: '#ef938d', opacity: 0.85 }} />
+                : <Wifi className="h-3.5 w-3.5" style={{ color: '#8cc8b4', opacity: loading ? 0.4 : 0.85 }} />}
             </div>
           </div>
         </div>
@@ -179,12 +179,8 @@ function AppShell({
 
         {/* Topbar */}
         <header
-          className="sticky top-0 z-20 flex items-center justify-between gap-4 border-b px-4 py-3 sm:px-6"
-          style={{
-            background: 'rgba(244,242,237,0.88)',
-            backdropFilter: 'blur(12px)',
-            borderColor: 'var(--border-card)',
-          }}
+          className="app-topbar sticky top-0 z-20 flex items-center justify-between gap-4 border-b px-4 py-3 sm:px-6"
+          style={{ borderColor: 'var(--border-card)' }}
         >
           {/* Mobile brand + active page */}
           <div className="flex items-center gap-3 lg:gap-0">
@@ -247,25 +243,25 @@ function AppShell({
         </nav>
 
         {/* Content */}
-        <main className="flex-1 px-4 py-5 sm:px-6 sm:py-6">
+        <main className="content-ruled flex-1 px-4 py-5 sm:px-6 sm:py-6">
           {error ? (
             <div
               className="mx-auto mt-8 max-w-lg rounded-xl border p-6"
-              style={{ borderColor: '#fca5a5', background: '#fff5f5' }}
+              style={{ borderColor: 'var(--danger-border)', background: 'var(--danger-bg)' }}
               role="alert"
             >
               <p className="text-[10px] font-semibold uppercase tracking-[0.2em]"
-                 style={{ color: '#b91c1c' }}>
+                 style={{ color: 'var(--danger-text)' }}>
                 Connection Error
               </p>
-              <h2 className="mt-2 text-base font-semibold" style={{ color: '#7f1d1d' }}>
+              <h2 className="mt-2 text-base font-semibold" style={{ color: '#7f2622' }}>
                 无法连接到 Web 后端
               </h2>
-              <p className="mt-1.5 text-sm leading-6" style={{ color: '#991b1b' }}>
+              <p className="mt-1.5 text-sm leading-6" style={{ color: 'var(--danger-text)' }}>
                 {error}
               </p>
               <div className="mt-4 rounded-lg border px-3 py-2 font-mono text-xs"
-                   style={{ borderColor: '#fca5a5', color: '#7f1d1d' }}>
+                   style={{ borderColor: 'var(--danger-border)', color: '#7f2622' }}>
                 python app_web.py --dev
               </div>
             </div>

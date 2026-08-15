@@ -426,7 +426,9 @@ class ScheduleEvaluator:
 
         for selected_course in selected_courses:
             for time_slot in selected_course.time_slots:
-                daily_campuses[time_slot.weekday].add(selected_course.course.campus)
+                daily_campuses[time_slot.weekday].add(
+                    self.config.normalize_campus(selected_course.course.campus)
+                )
 
         # 计算跨校区惩罚
         total_days = len(daily_campuses)

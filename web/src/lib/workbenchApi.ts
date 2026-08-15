@@ -26,12 +26,22 @@ type UnknownRecord = Record<string, unknown>;
 const DEFAULT_SCHEDULING_CONFIG: SchedulingConfig = {
   credit_constraint_mode: 'OPTIMAL',
   campus_conflict_mode: 'DAILY',
+  campus_equivalence_groups: [],
   max_solutions: 1,
   time_limit: 60,
   credit_overflow: 1.0,
 };
 
-const SCHEDULING_WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';
+function getSchedulingWebSocketUrl(): string {
+  if (import.meta.env.VITE_WS_URL) {
+    return import.meta.env.VITE_WS_URL;
+  }
+  if (typeof window === 'undefined') {
+    return 'ws://localhost:8000/ws';
+  }
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}/ws`;
+}
 
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
@@ -203,6 +213,11 @@ async function requestWithFallback<T>(
 
 function normalizeSchedulingConfig(value: unknown): SchedulingConfig {
   const source = unwrapData<UnknownRecord>(value) ?? {};
+  const campusGroups = asArray<unknown>(source.campus_equivalence_groups)
+    .map((group) => asArray<unknown>(group)
+      .map((campus) => coerceString(campus).trim())
+      .filter(Boolean))
+    .filter((group) => group.length >= 2);
   return {
     credit_constraint_mode: source.credit_constraint_mode === 'REQUIRED' ? 'REQUIRED' : 'OPTIMAL',
     campus_conflict_mode:
@@ -211,6 +226,7 @@ function normalizeSchedulingConfig(value: unknown): SchedulingConfig {
         : source.campus_conflict_mode === 'DISABLED'
           ? 'DISABLED'
           : 'DAILY',
+    campus_equivalence_groups: campusGroups,
     max_solutions: Math.max(1, coerceNumber(source.max_solutions, DEFAULT_SCHEDULING_CONFIG.max_solutions)),
     time_limit: Math.max(1, coerceNumber(source.time_limit, DEFAULT_SCHEDULING_CONFIG.time_limit)),
     credit_overflow: Math.min(
@@ -669,7 +685,7 @@ export function subscribeSchedulingStream(
     return null;
   }
 
-  const socket = new WebSocket(SCHEDULING_WS_URL);
+  const socket = new WebSocket(getSchedulingWebSocketUrl());
   const {
     eventTypes = ['scheduling.started', 'scheduling.progress', 'scheduling.completed', 'scheduling.failed'],
     onMessage,

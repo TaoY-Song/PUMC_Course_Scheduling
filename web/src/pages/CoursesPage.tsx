@@ -8,10 +8,12 @@ import {
   Layers3,
   Lock,
   LockKeyhole,
+  MapPin,
   Search,
   Sparkles,
   Trash2,
   Upload,
+  Wifi,
   X,
 } from 'lucide-react';
 import { Modal } from '../components/workbench/Modal';
@@ -93,7 +95,7 @@ export function CoursesPage() {
     }
     return map;
   }, [matches]);
-  const previewMatches = useMemo(() => matches.slice(0, 8), [matches]);
+  const previewMatches = useMemo(() => matches, [matches]);
 
   const refreshSelectedAndCredits = async (nextSelectedCourseId?: string | null) => {
     const [selected, credits] = await Promise.all([
@@ -277,8 +279,11 @@ export function CoursesPage() {
 
   const handleOnlineToggle = async (courseId: string, nextValue: boolean) => {
     try {
-      await patchSelectedCourse(courseId, { is_online: nextValue });
-      await refreshSelectedAndCredits(courseId);
+      const updatedCourse = await patchSelectedCourse(courseId, { is_online: nextValue });
+      setSelectedCourses((current) => current.map((course) => (
+        course.id === courseId ? updatedCourse : course
+      )));
+      setSelectedCourseId(courseId);
     } catch (error) {
       setFeedback({
         tone: 'error',
@@ -430,7 +435,7 @@ export function CoursesPage() {
         <div
           role="alert"
           className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border px-4 py-3 text-sm"
-          style={{ borderColor: '#fca5a5', background: '#fff5f5', color: '#991b1b' }}
+          style={{ borderColor: 'var(--danger-border)', background: 'var(--danger-bg)', color: 'var(--danger-text)' }}
         >
           <span className="font-medium">
             {unsetCategoryCourses.length} 门已选课程尚未设置类别
@@ -450,10 +455,10 @@ export function CoursesPage() {
           className="flex items-start gap-2 rounded-lg border px-4 py-3 text-sm"
           style={
             feedback.tone === 'error'
-              ? { borderColor: '#fca5a5', background: '#fff5f5', color: '#991b1b' }
+              ? { borderColor: 'var(--danger-border)', background: 'var(--danger-bg)', color: 'var(--danger-text)' }
               : feedback.tone === 'success'
-                ? { borderColor: '#99f6e4', background: '#f0fdfb', color: '#0f766e' }
-                : { borderColor: 'var(--border-base)', background: '#fffbf0', color: '#92400e' }
+                ? { borderColor: 'var(--success-border)', background: 'var(--success-bg)', color: 'var(--success-text)' }
+                : { borderColor: 'var(--warning-border)', background: 'var(--warning-bg)', color: 'var(--warning-text)' }
           }
         >
           {feedback.message}
@@ -470,8 +475,8 @@ export function CoursesPage() {
       {!loading && (
         <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
           {/* ── Left: catalog ── */}
-          <div className="min-w-0 space-y-4">
-            <Surface className="min-w-0">
+          <div className="min-w-0 space-y-4 xl:min-h-0 xl:self-stretch xl:[contain:size]">
+            <Surface className="h-full min-w-0 xl:[&>div]:flex xl:[&>div]:h-full xl:[&>div]:min-h-0 xl:[&>div]:flex-col">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <h3 className="min-w-0 truncate text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>课程目录</h3>
                 <span className="tag tag-gray shrink-0">CATALOG</span>
@@ -564,7 +569,7 @@ export function CoursesPage() {
                   <div
                     id="course-search-preview"
                     role="listbox"
-                    className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-lg border shadow-lg"
+                    className="absolute left-0 right-0 top-full z-20 mt-1 max-h-[18rem] overflow-y-auto overscroll-contain rounded-lg border shadow-lg"
                     style={{ borderColor: 'var(--border-card)', background: 'var(--bg-card)' }}
                   >
                     {previewMatches.map((match, index) => {
@@ -650,14 +655,6 @@ export function CoursesPage() {
                         </button>
                       );
                     })}
-                    {matches.length > previewMatches.length && (
-                      <div
-                        className="px-3 py-1.5 text-center text-[10px]"
-                        style={{ background: 'var(--bg-base)', color: 'var(--text-muted)' }}
-                      >
-                        另有 {matches.length - previewMatches.length} 条匹配，见下方列表
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -675,16 +672,19 @@ export function CoursesPage() {
                   没有匹配的课程，请缩短关键词或清空搜索。
                 </div>
               ) : (
-                <div className="min-w-0 overflow-hidden rounded-lg border" style={{ borderColor: 'var(--border-card)' }}>
-                  <div className="max-h-[32rem] overflow-auto">
+                <div
+                  className="min-w-0 overflow-hidden rounded-lg border xl:flex xl:min-h-0 xl:flex-1 xl:flex-col"
+                  style={{ borderColor: 'var(--border-card)' }}
+                >
+                  <div className="max-h-[32rem] overflow-auto xl:min-h-0 xl:flex-1 xl:max-h-none">
                     <table className="clinical-table min-w-full">
                       <thead>
                         <tr>
                           <th className="text-left">课程</th>
-                          <th className="text-left">教师 / 校区</th>
-                          <th className="text-left">类别</th>
-                          <th className="text-left">学分</th>
-                          <th className="text-right">操作</th>
+                          <th className="hidden text-left sm:table-cell">教师 / 校区</th>
+                          <th className="hidden text-left sm:table-cell">类别</th>
+                          <th className="whitespace-nowrap text-left">学分</th>
+                          <th className="whitespace-nowrap text-right">操作</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -724,23 +724,27 @@ export function CoursesPage() {
                                 <p className="mt-0.5 font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>
                                   {mark(course.course_code, 'code')} · 班次 {course.class_index}
                                 </p>
+                                <p className="mt-1 text-[11px] leading-5 sm:hidden" style={{ color: 'var(--text-muted)' }}>
+                                  {course.teacher ? mark(course.teacher, 'teacher') : '待定'}
+                                  {' · '}{course.campus || '校区待定'}{' · '}{course.category}
+                                </p>
                               </td>
-                              <td className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                              <td className="hidden text-sm sm:table-cell" style={{ color: 'var(--text-secondary)' }}>
                                 <p>{course.teacher ? mark(course.teacher, 'teacher') : '待定'}</p>
                                 <p className="mt-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
                                   {course.campus || '—'}
                                 </p>
                               </td>
-                              <td>
+                              <td className="hidden sm:table-cell">
                                 <div className="flex flex-wrap gap-1">
                                   <Pill tone="neutral">{course.category}</Pill>
                                   {course.is_online && <Pill tone="info">线上</Pill>}
                                 </div>
                               </td>
-                              <td className="text-sm tabular-nums" style={{ color: 'var(--text-secondary)' }}>
+                              <td className="whitespace-nowrap text-sm tabular-nums" style={{ color: 'var(--text-secondary)' }}>
                                 {course.credits.toFixed(1)}
                               </td>
-                              <td className="text-right">
+                              <td className="whitespace-nowrap text-right">
                                 <button
                                   type="button"
                                   disabled={busy || exists}
@@ -793,11 +797,9 @@ export function CoursesPage() {
                   {selectedCourses.map((c) => {
                     const active = selectedCourse?.id === c.id;
                     return (
-                      <button
+                      <div
                         key={c.id}
-                        type="button"
-                        onClick={() => setSelectedCourseId(c.id)}
-                        className="w-full rounded-lg border px-3 py-2.5 text-left transition"
+                        className="w-full rounded-lg border px-3 py-2.5 transition"
                         style={
                           active
                             ? { borderColor: 'var(--accent-ui)', background: 'var(--bg-sidebar)', color: 'var(--text-on-dark)' }
@@ -809,12 +811,35 @@ export function CoursesPage() {
                         }
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
+                          <button
+                            type="button"
+                            aria-pressed={active}
+                            onClick={() => setSelectedCourseId(c.id)}
+                            className="min-w-0 flex-1 text-left"
+                          >
                             <p className="truncate text-sm font-medium">{c.course.course_name}</p>
                             <p className="mt-0.5 font-mono text-[11px] opacity-70">
                               {c.course.course_code} · 班次 {c.class_index}
                             </p>
-                          </div>
+                            <div className="mt-1 flex gap-1">
+                              <Pill tone={c.is_category_locked ? 'warning' : 'neutral'}>
+                                {c.is_category_locked ? '锁定' : '可改'}
+                              </Pill>
+                              <Pill
+                                tone={c.is_online ? 'info' : 'warning'}
+                                className="font-semibold"
+                              >
+                                {c.is_online ? (
+                                  <><Wifi className="h-3 w-3" />线上</>
+                                ) : (
+                                  <><MapPin className="h-3 w-3" />线下</>
+                                )}
+                              </Pill>
+                              {isCategoryUnset(c.custom_category) && (
+                                <Pill tone="danger">类别待设置</Pill>
+                              )}
+                            </div>
+                          </button>
                           <button
                             type="button"
                             onClick={(e) => {
@@ -827,18 +852,7 @@ export function CoursesPage() {
                             移除
                           </button>
                         </div>
-                        <div className="mt-1 flex gap-1">
-                          <Pill tone={c.is_category_locked ? 'warning' : 'neutral'}>
-                            {c.is_category_locked ? '锁定' : '可改'}
-                          </Pill>
-                          <Pill tone={c.is_online ? 'info' : 'neutral'}>
-                            {c.is_online ? '线上' : '线下'}
-                          </Pill>
-                          {isCategoryUnset(c.custom_category) && (
-                            <Pill tone="danger">类别待设置</Pill>
-                          )}
-                        </div>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -880,7 +894,7 @@ export function CoursesPage() {
                           }}
                           className="input-base"
                           style={isCategoryUnset(selectedCourse.custom_category)
-                            ? { borderColor: '#fca5a5', background: '#fff5f5' }
+                            ? { borderColor: 'var(--danger-border)', background: 'var(--danger-bg)' }
                             : undefined}
                         >
                           {isCategoryUnset(selectedCourse.custom_category) && (
@@ -900,6 +914,16 @@ export function CoursesPage() {
                         <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.15em]"
                               style={{ color: 'var(--text-muted)' }}>状态</span>
                         <div className="flex flex-wrap gap-1.5">
+                          <Pill
+                            tone={selectedCourse.is_online ? 'info' : 'warning'}
+                            className="px-2.5 py-1 font-semibold"
+                          >
+                            {selectedCourse.is_online ? (
+                              <><Wifi className="h-3.5 w-3.5" />当前线上</>
+                            ) : (
+                              <><MapPin className="h-3.5 w-3.5" />当前线下</>
+                            )}
+                          </Pill>
                           <button
                             type="button"
                             className="btn-ghost"
@@ -909,7 +933,7 @@ export function CoursesPage() {
                               );
                             }}
                           >
-                            {selectedCourse.is_online ? '改为线下' : '标记线上'}
+                            {selectedCourse.is_online ? '切换为线下' : '切换为线上'}
                           </button>
                           <button
                             type="button"
@@ -959,7 +983,7 @@ export function CoursesPage() {
                           <div
                             key={`${selectedCourse.id}-${index}`}
                             className="flex items-center justify-between gap-2 rounded-md px-2 py-2"
-                            style={{ background: '#faf9f6' }}
+                            style={{ background: 'var(--bg-subtle)' }}
                           >
                             <div className="flex items-center gap-1.5">
                               <Clock3 className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-ui)' }} />

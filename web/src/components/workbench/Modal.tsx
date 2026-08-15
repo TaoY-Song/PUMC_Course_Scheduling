@@ -35,7 +35,7 @@ export function Modal({
         style={{ borderColor: 'var(--border-base)' }}
       >
         <div className="flex items-start justify-between gap-4 border-b px-5 py-4"
-             style={{ borderColor: 'var(--border-card)', background: '#faf9f6' }}>
+             style={{ borderColor: 'var(--border-card)', background: 'var(--bg-subtle)' }}>
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--text-muted)' }}>Dialog</p>
             <h3 id="modal-title" className="mt-0.5 text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h3>
@@ -48,7 +48,7 @@ export function Modal({
         <div className="max-h-[78vh] overflow-y-auto px-5 py-5">{children}</div>
         {footer && (
           <div className="flex flex-wrap items-center justify-end gap-2 border-t px-5 py-4"
-               style={{ borderColor: 'var(--border-card)', background: '#faf9f6' }}>
+               style={{ borderColor: 'var(--border-card)', background: 'var(--bg-subtle)' }}>
             {footer}
           </div>
         )}

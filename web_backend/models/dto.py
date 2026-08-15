@@ -82,6 +82,7 @@ class SelectedCourseUpdateDTO(BaseModel):
 class SchedulingConfigDTO(BaseModel):
     credit_constraint_mode: CreditConstraintMode = CreditConstraintMode.OPTIMAL
     campus_conflict_mode: CampusConflictMode = CampusConflictMode.DAILY
+    campus_equivalence_groups: List[List[str]] = Field(default_factory=list)
     max_solutions: int = Field(default=1, ge=1, le=10)
     time_limit: int = Field(default=60, ge=10, le=300)
     # 学分溢出上限用固定学分（不是比例）。比例制在小缺口上张不开：

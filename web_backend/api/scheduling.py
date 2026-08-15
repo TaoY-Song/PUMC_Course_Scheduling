@@ -52,6 +52,7 @@ def _to_config_dto(config: SchedulingConfig) -> SchedulingConfigDTO:
     return SchedulingConfigDTO(
         credit_constraint_mode=CreditConstraintModeDTO(config.credit_constraint_mode.value.upper()),
         campus_conflict_mode=CampusConflictModeDTO(config.campus_conflict_mode.value.upper()),
+        campus_equivalence_groups=[list(group) for group in config.campus_equivalence_groups],
         max_solutions=min(config.max_solutions, 10),
         time_limit=config.max_solve_time_seconds,
         credit_overflow=config.max_credit_overflow,
@@ -158,14 +159,22 @@ async def configure_scheduling(
     credit_mode = CoreCreditConstraintMode(config_dto.credit_constraint_mode.value.lower())
     campus_mode = CoreCampusConflictMode(config_dto.campus_conflict_mode.value.lower())
 
-    session.scheduling_config = SchedulingConfig(
+    next_config = SchedulingConfig(
         credit_constraint_mode=credit_mode,
         campus_conflict_mode=campus_mode,
+        campus_equivalence_groups=tuple(
+            tuple(dict.fromkeys(str(campus).strip() for campus in group if str(campus).strip()))
+            for group in config_dto.campus_equivalence_groups
+        ),
         max_solutions=config_dto.max_solutions,
         max_solve_time_seconds=config_dto.time_limit,
         max_credit_overflow=config_dto.credit_overflow,
     )
-    scheduling_service.configure(session.scheduling_config)
+    validation_errors = next_config.validate()
+    if validation_errors:
+        raise HTTPException(status_code=422, detail="；".join(validation_errors))
+    session.scheduling_config = next_config
+    scheduling_service.configure(next_config)
 
     return ApiResponse(success=True, message="排课配置已更新")
 

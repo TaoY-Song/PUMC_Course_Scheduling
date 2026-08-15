@@ -48,6 +48,7 @@ def test_preset_factories_are_static(factory, attr, expected):
 def test_config_dict_roundtrip_preserves_every_field():
     original = SchedulingConfig(
         campus_conflict_mode=CampusConflictMode.PERIOD,
+        campus_equivalence_groups=(("西北旺药植所校区", "院校北区"), ("东单校区", "西院")),
         credit_constraint_mode=CreditConstraintMode.REQUIRED,
         half_day_blocks=(("上午", 1, 4), ("下午", 5, 8)),
         max_credit_overflow=1.5,
@@ -63,6 +64,22 @@ def test_config_dict_roundtrip_preserves_every_field():
     assert restored.to_dict() == original.to_dict()
     assert restored.avoid_early_morning is True
     assert restored.lunch_break_protection is True
+
+
+def test_campus_equivalence_normalization_and_validation():
+    config = SchedulingConfig(
+        campus_equivalence_groups=(("西北旺药植所校区", "院校北区"),),
+    )
+
+    assert config.normalize_campus("院校北区") == "西北旺药植所校区"
+    assert config.normalize_campus("东单校区") == "东单校区"
+    assert config.normalize_campus(None) == ""
+    assert config.validate() == []
+
+    invalid = SchedulingConfig(
+        campus_equivalence_groups=(("西北旺药植所校区", "院校北区"), ("院校北区", "东单校区")),
+    )
+    assert any("不能同时属于多个等价组" in error for error in invalid.validate())
 
 
 def test_half_day_blocks_survive_dict_roundtrip():

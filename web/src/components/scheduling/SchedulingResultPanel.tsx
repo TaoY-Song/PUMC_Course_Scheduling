@@ -99,7 +99,7 @@ export function SchedulingResultPanel({ result, courses, action }: SchedulingRes
       {/* Course table */}
       <div className="overflow-hidden rounded-lg border" style={{ borderColor: 'var(--border-card)' }}>
         <div className="border-b px-4 py-2.5"
-             style={{ borderColor: 'var(--border-card)', background: '#f8f7f4' }}>
+             style={{ borderColor: 'var(--border-card)', background: 'var(--bg-subtle)' }}>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em]"
              style={{ color: 'var(--text-muted)' }}>
             课程明细 — {selectedCourses.length} 门

@@ -339,10 +339,13 @@ class SchedulingService(ISchedulingService):
 
             if self._config.campus_conflict_mode.value == "daily":
                 # DAILY模式：检查同一天是否有不同校区
-                campuses = set(course.course.campus for course, _ in day_course_slots)
-                if len(campuses) > 1:
+                campus_names = {}
+                for course, _ in day_course_slots:
+                    campus_key = self._config.normalize_campus(course.course.campus)
+                    campus_names.setdefault(campus_key, course.course.campus)
+                if len(campus_names) > 1:
                     day_conflicts.append(
-                        f"   • {weekday_names[day]}: {', '.join(campuses)}"
+                        f"   • {weekday_names[day]}: {', '.join(campus_names.values())}"
                     )
 
             elif self._config.campus_conflict_mode.value == "period":
@@ -380,7 +383,8 @@ class SchedulingService(ISchedulingService):
                                 # 只有在周次重叠且校区不同时才报告冲突
                                 if (
                                     weeks_overlap
-                                    and course1.course.campus != course2.course.campus
+                                    and self._config.normalize_campus(course1.course.campus)
+                                    != self._config.normalize_campus(course2.course.campus)
                                 ):
                                     overlap_weeks = sorted(list(weeks_overlap))
                                     weeks_str = (
