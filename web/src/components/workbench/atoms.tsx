@@ -12,12 +12,12 @@ interface SurfaceProps {
 export function Surface({ title, eyebrow, children, className = '', action }: SurfaceProps) {
   return (
     <section
-      className={`surface-panel rounded-lg border ${className}`}
-      style={{ borderColor: 'var(--border-card)' }}
+      className={`surface-panel card-hover rounded-2xl border ${className}`}
+      style={{ borderColor: 'var(--border-card)', background: 'var(--bg-card)' }}
     >
       {(title || eyebrow || action) && (
         <div
-          className="surface-header flex items-center justify-between gap-4 px-5 py-3.5"
+          className="surface-header flex items-center justify-between gap-4 px-6 py-4"
           style={{ borderBottom: '1px solid var(--border-subtle)' }}
         >
           <div>
@@ -35,7 +35,7 @@ export function Surface({ title, eyebrow, children, className = '', action }: Su
           {action && <div className="shrink-0">{action}</div>}
         </div>
       )}
-      <div className="px-5 py-4">{children}</div>
+      <div className="px-6 py-5">{children}</div>
     </section>
   );
 }
@@ -61,7 +61,7 @@ export function MetricCard({ label, value, hint, tone = 'sand' }: MetricCardProp
   return (
     <div className={`${base} ${toneMap[tone]}`}>
       <p className="text-[10px] font-semibold uppercase tracking-[0.22em] opacity-70">{label}</p>
-      <p className="mt-2 text-2xl font-semibold leading-none tabular-nums">{value}</p>
+      <p key={value} className="animate-count mt-2 text-2xl font-semibold leading-none tabular-nums">{value}</p>
       {hint && <p className="mt-1.5 text-xs leading-5 opacity-65">{hint}</p>}
     </div>
   );

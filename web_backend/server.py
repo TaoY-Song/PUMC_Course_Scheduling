@@ -84,6 +84,10 @@ if static_path.exists():
 
 @app.get("/")
 async def root():
+    landing_file = static_path / "pumc-scheduling-demo.html"
+    if landing_file.exists():
+        return FileResponse(str(landing_file))
+
     index_file = static_path / "index.html"
     if index_file.exists():
         return FileResponse(str(index_file))

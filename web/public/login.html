@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>登录 - PUMC 智能排课系统</title>
+  <style>
+    /* ─── Design Tokens ─────────────────────────────────────────────── */
+    :root {
+      --bg:      #f2f5f4;
+      --surface: #ffffff;
+      --fg:      #172321;
+      --muted:   #687a76;
+      --border:  #d7e0dd;
+      --accent:  #0b554f;
+
+      --success: #0b6356;
+      --success-bg: #edf8f4;
+      --danger: #DC2626;
+      --danger-bg: #fff1ef;
+
+      --accent-soft: color-mix(in oklch, var(--accent) 14%, transparent);
+      --fg-soft:     color-mix(in oklch, var(--fg) 6%, transparent);
+
+      --font-display: 'Source Serif Pro', 'Noto Serif SC', Georgia, serif;
+      --font-body:    'Inter', 'Microsoft YaHei UI', system-ui, sans-serif;
+      --font-mono:    'JetBrains Mono', 'SF Mono', Consolas, monospace;
+
+      --radius: 12px;
+      --radius-lg: 16px;
+      --duration-fast: 150ms;
+      --duration-normal: 300ms;
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* ─── Reset & Base ────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-body);
+      font-size: 16px;
+      line-height: 1.6;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    /* ─── Login Container ───────────────────────────────────────────── */
+    .login-wrapper {
+      width: 100%;
+      max-width: 440px;
+    }
+
+    .login-header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .logo-container {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .logo-icon {
+      width: 56px;
+      height: 56px;
+      background: var(--accent);
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      color: white;
+      font-family: var(--font-mono);
+      font-size: 28px;
+      font-weight: 700;
+      box-shadow: 0 4px 12px rgba(11, 85, 79, 0.25);
+    }
+
+    .logo-text {
+      font-family: var(--font-display);
+      font-size: 24px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--fg);
+    }
+
+    .login-title {
+      font-family: var(--font-display);
+      font-size: 28px;
+      font-weight: 600;
+      letter-spacing: -0.015em;
+      color: var(--fg);
+      margin-bottom: 8px;
+    }
+
+    .login-subtitle {
+      font-size: 15px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    /* ─── Login Card ──────────────────────────────────────────────── */
+    .login-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 40px;
+      box-shadow: 0 4px 24px rgba(23, 35, 33, 0.08);
+    }
+
+    /* ─── Form Elements ─────────────────────────────────────────────── */
+    .form-group {
+      margin-bottom: 24px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--fg);
+      margin-bottom: 8px;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--fg);
+      font: inherit;
+      font-size: 15px;
+      transition: all var(--duration-fast) ease;
+    }
+
+    .form-input::placeholder {
+      color: var(--muted);
+      opacity: 0.6;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    .form-input:disabled {
+      background: var(--bg);
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    /* ─── Buttons ──────────────────────────────────────────────────── */
+    .btn {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 14px 24px;
+      border-radius: var(--radius);
+      border: 1px solid transparent;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.005em;
+      cursor: pointer;
+      transition: all var(--duration-fast) var(--ease-out);
+    }
+
+    .btn:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+
+    .btn:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+      box-shadow: 0 1px 2px rgba(11, 85, 79, 0.2), inset 0 1px 0 rgba(255,255,255,0.15);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: color-mix(in oklch, var(--accent) 88%, black);
+      box-shadow: 0 4px 12px rgba(11, 85, 79, 0.3);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--fg);
+      border-color: var(--border);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: var(--bg);
+      border-color: var(--accent);
+    }
+
+    /* ─── Form Footer ─────────────────────────────────────────────── */
+    .form-footer {
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      text-align: center;
+    }
+
+    .form-footer-text {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    .link-text {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+      transition: color var(--duration-fast) ease;
+    }
+
+    .link-text:hover {
+      color: color-mix(in oklch, var(--accent) 88%, black);
+      text-decoration: underline;
+    }
+
+    /* ─── Alert Messages ────────────────────────────────────────────── */
+    .alert {
+      padding: 12px 16px;
+      border-radius: var(--radius);
+      font-size: 14px;
+      margin-bottom: 20px;
+      display: none;
+      animation: slideDown 0.3s var(--ease-out);
+    }
+
+    .alert.show {
+      display: block;
+    }
+
+    .alert-error {
+      background: var(--danger-bg);
+      color: var(--danger);
+      border: 1px solid color-mix(in oklch, var(--danger) 30%, transparent);
+    }
+
+    .alert-success {
+      background: var(--success-bg);
+      color: var(--success);
+      border: 1px solid color-mix(in oklch, var(--success) 30%, transparent);
+    }
+
+    /* ─── Demo Notice ─────────────────────────────────────────────── */
+    .demo-notice {
+      background: var(--accent-soft);
+      border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 24px;
+      font-size: 13px;
+      color: var(--accent);
+      line-height: 1.6;
+    }
+
+    .demo-notice strong {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 6px;
+      font-family: var(--font-mono);
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      font-size: 11px;
+    }
+
+    .demo-credentials {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      margin-top: 8px;
+      padding: 8px;
+      background: var(--surface);
+      border-radius: 6px;
+    }
+
+    /* ─── Animations ──────────────────────────────────────────────── */
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+
+    /* ─── Responsive ──────────────────────────────────────────────── */
+    @media (max-width: 640px) {
+      .login-card {
+        padding: 28px 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="login-wrapper">
+    <div class="login-header">
+      <div class="logo-container">
+        <div class="logo-icon">协</div>
+        <span class="logo-text">PUMC 排课系统</span>
+      </div>
+      <h1 class="login-title">欢迎回来</h1>
+      <p class="login-subtitle">登录以访问智能排课系统</p>
+    </div>
+
+    <div class="login-card">
+      <!-- Demo Notice -->
+      <div class="demo-notice">
+        <strong>演示模式</strong>
+        任意用户名和密码即可登录体验系统功能
+        <div class="demo-credentials">
+          示例：admin / 任意密码
+        </div>
+      </div>
+
+      <!-- Alert Messages -->
+      <div id="alert" class="alert"></div>
+
+      <!-- Login Form -->
+      <form id="loginForm">
+        <div class="form-group">
+          <label class="form-label" for="username">用户名</label>
+          <input
+            type="text"
+            id="username"
+            class="form-input"
+            placeholder="请输入用户名"
+            autocomplete="username"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="password">密码</label>
+          <input
+            type="password"
+            id="password"
+            class="form-input"
+            placeholder="请输入密码"
+            autocomplete="current-password"
+            required
+          />
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="loginBtn">
+          <span id="loginBtnText">登录</span>
+          <span id="loginBtnSpinner" class="spinner" style="display: none;"></span>
+        </button>
+
+        <div class="form-footer">
+          <p class="form-footer-text">还没有账号？</p>
+          <button type="button" class="btn btn-secondary" id="guestBtn">
+            访客模式体验
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div style="text-align: center; margin-top: 24px; font-size: 13px; color: var(--muted);">
+      <a href="https://github.com/TaoY-Song/PUMC_Course_Scheduling" target="_blank" class="link-text">
+        查看项目源码 →
+      </a>
+    </div>
+  </div>
+
+  <script>
+    // ─── Session Check ───────────────────────────────────────────────────
+    // 如果已登录，直接跳转到着陆页
+    if (sessionStorage.getItem('isLoggedIn') === 'true') {
+      window.location.href = 'pumc-scheduling-demo.html';
+    }
+
+    // ─── Form Elements ───────────────────────────────────────────────────
+    const loginForm = document.getElementById('loginForm');
+    const usernameInput = document.getElementById('username');
+    const passwordInput = document.getElementById('password');
+    const loginBtn = document.getElementById('loginBtn');
+    const loginBtnText = document.getElementById('loginBtnText');
+    const loginBtnSpinner = document.getElementById('loginBtnSpinner');
+    const guestBtn = document.getElementById('guestBtn');
+    const alertBox = document.getElementById('alert');
+
+    // ─── Helper Functions ────────────────────────────────────────────────
+    function showAlert(message, type = 'error') {
+      alertBox.textContent = message;
+      alertBox.className = `alert alert-${type} show`;
+      setTimeout(() => {
+        alertBox.classList.remove('show');
+      }, 4000);
+    }
+
+    function setLoading(isLoading) {
+      if (isLoading) {
+        loginBtn.disabled = true;
+        usernameInput.disabled = true;
+        passwordInput.disabled = true;
+        guestBtn.disabled = true;
+        loginBtnText.style.display = 'none';
+        loginBtnSpinner.style.display = 'inline-block';
+      } else {
+        loginBtn.disabled = false;
+        usernameInput.disabled = false;
+        passwordInput.disabled = false;
+        guestBtn.disabled = false;
+        loginBtnText.style.display = 'inline';
+        loginBtnSpinner.style.display = 'none';
+      }
+    }
+
+    function handleLogin(username) {
+      // 存储登录状态
+      sessionStorage.setItem('isLoggedIn', 'true');
+      sessionStorage.setItem('username', username);
+      sessionStorage.setItem('loginTime', new Date().toISOString());
+
+      // 显示成功消息
+      showAlert('登录成功，正在跳转...', 'success');
+
+      // 延迟跳转到着陆页
+      setTimeout(() => {
+        window.location.href = 'pumc-scheduling-demo.html';
+      }, 800);
+    }
+
+    // ─── Form Submit Handler ─────────────────────────────────────────────
+    loginForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      const username = usernameInput.value.trim();
+      const password = passwordInput.value.trim();
+
+      // 基础验证
+      if (!username) {
+        showAlert('请输入用户名');
+        usernameInput.focus();
+        return;
+      }
+
+      if (!password) {
+        showAlert('请输入密码');
+        passwordInput.focus();
+        return;
+      }
+
+      // 模拟登录过程
+      setLoading(true);
+
+      // 演示模式：任意用户名密码都可以登录
+      setTimeout(() => {
+        setLoading(false);
+        handleLogin(username);
+      }, 1000);
+
+      // 实际项目中，这里应该调用后端API：
+      /*
+      fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      })
+      .then(res => res.json())
+      .then(data => {
+        setLoading(false);
+        if (data.success) {
+          handleLogin(username);
+        } else {
+          showAlert(data.message || '用户名或密码错误');
+        }
+      })
+      .catch(err => {
+        setLoading(false);
+        showAlert('网络错误，请稍后重试');
+      });
+      */
+    });
+
+    // ─── Guest Mode Handler ──────────────────────────────────────────────
+    guestBtn.addEventListener('click', () => {
+      handleLogin('访客用户');
+    });
+
+    // ─── Auto-fill for Demo ─────────────────────────────────────────────
+    // 方便演示，自动填充示例账号（生产环境需移除）
+    usernameInput.value = 'admin';
+    passwordInput.value = 'demo123';
+  </script>
+</body>
+</html>

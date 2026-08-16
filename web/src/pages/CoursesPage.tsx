@@ -452,7 +452,7 @@ export function CoursesPage() {
         <div
           role={feedback.tone === 'error' ? 'alert' : 'status'}
           aria-live="polite"
-          className="flex items-start gap-2 rounded-lg border px-4 py-3 text-sm"
+          className="feedback-banner flex items-start gap-2 rounded-lg border px-4 py-3 text-sm"
           style={
             feedback.tone === 'error'
               ? { borderColor: 'var(--danger-border)', background: 'var(--danger-bg)', color: 'var(--danger-text)' }
@@ -467,8 +467,20 @@ export function CoursesPage() {
 
       {/* Loading skeleton */}
       {loading && (
-        <div className="py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
-          初始化工作台…
+        <div className="space-y-5" aria-label="正在初始化课程工作台" aria-busy="true">
+          <div className="grid gap-3 sm:grid-cols-3">
+            {Array.from({ length: 3 }, (_, index) => (
+              <div key={index} className="skeleton h-24 rounded-xl" />
+            ))}
+          </div>
+          <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
+            <div className="skeleton h-[32rem] rounded-2xl" />
+            <div className="space-y-4">
+              <div className="skeleton h-48 rounded-2xl" />
+              <div className="skeleton h-64 rounded-2xl" />
+            </div>
+          </div>
+          <span className="sr-only">初始化工作台…</span>
         </div>
       )}
 
@@ -716,7 +728,11 @@ export function CoursesPage() {
                               ),
                             );
                           return (
-                            <tr key={`${course.course_code}-${course.class_index}`}>
+                            <tr
+                              key={`${course.course_code}-${course.class_index}`}
+                              className="course-row"
+                              data-course-category={course.category}
+                            >
                               <td>
                                 <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
                                   {mark(course.course_name, 'name')}
