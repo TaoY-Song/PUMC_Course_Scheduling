@@ -26,6 +26,7 @@ import {
   addTimeSlot,
   clearSelectedCourses,
   deleteTimeSlot,
+  describeApiError,
   getCourses,
   getCreditStatus,
   getSelectedCourses,
@@ -164,8 +165,9 @@ export function CoursesPage() {
       await refreshSelectedAndCredits(null);
       setFeedback({
         tone: result.warnings.length > 0 ? 'warning' : 'success',
+        // 只报条数等于没报：用户不知道是哪一列缺了，也就无从预料后果。
         message: result.warnings.length > 0
-          ? `${result.message}，但有 ${result.warnings.length} 条列映射警告。`
+          ? `${result.message}。列映射提示：${result.warnings.join('；')}`
           : result.message,
       });
     } catch (error) {
@@ -216,7 +218,7 @@ export function CoursesPage() {
     } catch (error) {
       setFeedback({
         tone: 'error',
-        message: error instanceof Error ? error.message : '添加课程失败',
+        message: describeApiError(error, '添加课程失败'),
       });
     } finally {
       setBusy(false);

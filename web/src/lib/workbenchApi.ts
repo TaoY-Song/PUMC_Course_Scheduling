@@ -180,6 +180,29 @@ function normalizeSelectedCourse(value: unknown): SelectedCourse {
   };
 }
 
+/**
+ * 取出后端 HTTPException 里的 detail。
+ *
+ * axios 抛出的 Error.message 只有 "Request failed with status code 409"，
+ * 后端精心写的 detail（比如「课程编码重复，无法确定加哪一门」）会被丢掉，
+ * 用户只看到一句状态码。
+ */
+export function describeApiError(error: unknown, fallback: string): string {
+  if (error && typeof error === 'object') {
+    const payload = (error as AxiosError<{ detail?: unknown; message?: unknown }>).response?.data;
+    const detail = payload?.detail ?? payload?.message;
+    if (typeof detail === 'string' && detail.trim()) {
+      return detail;
+    }
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return fallback;
+}
+
 function isMissingEndpointError(error: unknown): boolean {
   if (!error || typeof error !== 'object') {
     return false;

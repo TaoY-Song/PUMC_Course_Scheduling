@@ -94,6 +94,17 @@ def _find_loaded_course(session: WebSessionContext, course_code: str, class_inde
     matches = session.find_courses(course_code, class_index)
     if not matches:
         raise HTTPException(status_code=404, detail="课程未找到")
+    if len(matches) > 1:
+        # 以前这里直接 `return matches[0]`，把「数据有歧义」悄悄变成「加错课」：
+        # 界面提示已加入用户点的那门，实际进入已选列表的是同编码的第一门。
+        names = "、".join(dict.fromkeys(course.name for course in matches))
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"课程编码 {course_code}（班次 {class_index}）在课程表里对应 {len(matches)} 门课：{names}。"
+                "无法确定要加入哪一门，请修正课程一览表中重复的课程编码。"
+            ),
+        )
     return matches[0]
 
 

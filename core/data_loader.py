@@ -11,6 +11,19 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from .models import Course, TimeSlot
 
+# 教务处各学期导出的一览表表头并不统一，同一个字段常换几种写法。
+# 这里只覆盖身份列「课程编码」：认不出来会导致整列编码退化成同一个值，
+# 后果是全表课程一起变灰、加课加错门。其余列认不出来只是显示成默认值，
+# 危害小得多，且在看不到真实表格的情况下乱加别名反而可能改错语义，
+# 所以留给维护者按实际表头补。
+# 只在规范列名缺席时才用别名顶上，避免把真有区别的两列混在一起。
+COLUMN_ALIASES: Dict[str, tuple] = {
+    "课程编码": ("课程编号", "课程代码", "课程号", "课程代号", "course_code"),
+}
+
+# 缺少课程编码时按行号生成的占位编码前缀。
+AUTO_CODE_PREFIX = "AUTO"
+
 
 class CourseDataLoader:
     """课程数据加载器"""
@@ -33,6 +46,12 @@ class CourseDataLoader:
             # 读取Excel文件
             df = pd.read_excel(file_path)
             print(f"✓ 成功读取Excel文件，共 {len(df)} 条记录")
+
+            # 同一个 loader 可能被复用来加载第二份表，警告不能沿用上一次的。
+            self.column_warnings = []
+
+            # 先把别名表头改写成规范列名，再判断哪些列真的缺失
+            df = self._normalize_column_names(df)
 
             # 验证必要列
             if not self._validate_columns(df):
@@ -83,17 +102,49 @@ class CourseDataLoader:
 
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
-            self.column_warnings = [f"缺少列 '{col}'，已使用默认值" for col in missing_columns]
-            for warn in self.column_warnings:
-                print(f"⚠️ {warn}")
+            # 用 append 而不是覆盖：_normalize_column_names 可能已经记了别名映射。
+            for col in missing_columns:
+                if col == "课程编码":
+                    # 这一列不走「填默认值」那条路，_ensure_unique_course_codes
+                    # 会按行号生成唯一编码并给出更准确的警告，别报两遍。
+                    continue
+                warning = f"缺少列 '{col}'，已使用默认值"
+                self.column_warnings.append(warning)
+                print(f"⚠️ {warning}")
             print("  将使用默认值继续处理...")
 
         print("✓ Excel文件列验证通过")
         return True
 
+    def _normalize_column_names(self, df: pd.DataFrame) -> pd.DataFrame:
+        """把常见的表头别名改写成规范列名。
+
+        学校发的一览表里「课程编码」经常写作「课程编号」。识别不出来就会
+        走缺列兜底，整列编码退化成同一个值——那正是全表课程一起变灰的起点。
+        """
+        df = df.copy()
+        df.columns = [str(column).strip() for column in df.columns]
+
+        renames: Dict[str, str] = {}
+        for canonical, aliases in COLUMN_ALIASES.items():
+            if canonical in df.columns:
+                continue
+            for alias in aliases:
+                if alias in df.columns and alias not in renames:
+                    renames[alias] = canonical
+                    warning = f"列 '{alias}' 已按 '{canonical}' 处理"
+                    self.column_warnings.append(warning)
+                    print(f"  ↪ {warning}")
+                    break
+
+        return df.rename(columns=renames) if renames else df
+
     def _clean_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """清洗数据"""
         df = df.copy()
+
+        # 课程编码是身份列，必须逐行唯一，不能和下面的展示列一样填常量。
+        df = self._ensure_unique_course_codes(df)
 
         # 为缺失的列添加默认值
         # 注意：课程类别留空字符串，不能编造 "选修课"。
@@ -102,7 +153,6 @@ class CourseDataLoader:
         # 算进学位选修桶，而 UI 显示为已设置好，用户无从发现。
         # 留空则走 "nan" 分支，正常呈现为「类别待设置」等用户手选。
         defaults = {
-            "课程编码": "UNKNOWN",
             "课程名称": "未知课程",
             "开课院系": "未知院系",
             "课程类别": "",
@@ -149,7 +199,70 @@ class CourseDataLoader:
         df = df[df["课程编码"].str.strip() != ""]
         df = df[df["课程名称"].str.strip() != ""]
 
+        self._warn_about_duplicate_keys(df)
+
         return df
+
+    def _ensure_unique_course_codes(self, df: pd.DataFrame) -> pd.DataFrame:
+        """保证「课程编码」这一列真的能当身份用。
+
+        目录去重、按编码查课、前端「已选」判断全靠这一列。整列填同一个常量
+        （原先的 ``"UNKNOWN"``）会让所有课程共用一个键：加入任意一门课，前端
+        整张表一起判为「已选」变灰；后端 ``find_courses`` 也只会返回第一条，
+        于是点 A 加进去的是 B。缺失/空白一律按行号生成唯一占位编码。
+        """
+        df = df.copy()
+
+        def auto_code(position: int) -> str:
+            # +2：Excel 第 1 行是表头，数据从第 2 行开始，方便用户回表核对。
+            return f"{AUTO_CODE_PREFIX}{position + 2:04d}"
+
+        if "课程编码" not in df.columns:
+            df["课程编码"] = [auto_code(position) for position in range(len(df))]
+            warning = f"缺少列 '课程编码'，已按行号生成占位编码（{auto_code(0)} 起）"
+            self.column_warnings.append(warning)
+            print(f"  ⚠️ {warning}")
+            return df
+
+        codes = df["课程编码"].astype(str).str.strip()
+        # astype(str) 会把 NaN 变成字符串 "nan"，后面的空值过滤就拦不住了，
+        # 多行空编码会一起退化成同一个 "nan"——和常量兜底是同一个毛病。
+        blank = df["课程编码"].isna() | codes.isin(("", "nan", "NaN", "None", "<NA>"))
+        if blank.any():
+            fallback = pd.Series(
+                [auto_code(position) for position in range(len(df))], index=df.index
+            )
+            codes = codes.mask(blank, fallback)
+            warning = f"{int(blank.sum())} 行的课程编码为空，已按行号生成占位编码"
+            self.column_warnings.append(warning)
+            print(f"  ⚠️ {warning}")
+
+        df["课程编码"] = codes
+        return df
+
+    def _warn_about_duplicate_keys(self, df: pd.DataFrame) -> None:
+        """「课程编码 + 班次」在表内撞车时提醒用户。
+
+        这一对是全链路的身份键，重复的两门课在选课界面会互相牵连。
+        源数据的真伪只有用户能判断，这里只报告，不自作主张改编码。
+        """
+        if df.empty:
+            return
+
+        duplicated = df.duplicated(subset=["课程编码", "班次"], keep=False)
+        if not duplicated.any():
+            return
+
+        pairs = [
+            f"{code} 班次{class_num}"
+            for code, class_num in (
+                df.loc[duplicated, ["课程编码", "班次"]].drop_duplicates().itertuples(index=False)
+            )
+        ]
+        preview = "、".join(pairs[:5]) + ("…" if len(pairs) > 5 else "")
+        warning = f"{len(pairs)} 组「课程编码+班次」在表内重复（{preview}），选课时会互相干扰"
+        self.column_warnings.append(warning)
+        print(f"  ⚠️ {warning}")
 
     def _create_course_from_row(self, row) -> Optional[Course]:
         """从数据行创建 Course，并尽可能保留课程表中的时间信息。"""
