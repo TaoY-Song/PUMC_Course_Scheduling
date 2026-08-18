@@ -16,7 +16,22 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from core.app_paths import default_static_dir, is_frozen, user_data_dir
+try:
+    from core.app_paths import default_static_dir, is_frozen, user_data_dir
+except (ImportError, ValueError) as _error:
+    # pandas/numpy 的 ABI 不匹配会在这里抛 ValueError（不是 ImportError），
+    # 直接冒泡出去就是一屏 traceback + 窗口关闭，用户只看到「一打开就闪退」。
+    print("❌ 依赖加载失败，程序无法启动。")
+    print(f"   原始错误: {type(_error).__name__}: {_error}")
+    print()
+    print("   常见原因与修复：")
+    print("   1) pandas 与 numpy 的二进制版本不匹配")
+    print('      （报错含 "numpy.dtype size changed"）')
+    print("   2) 依赖装在了另一个 Python 环境里")
+    print()
+    print("   请在项目目录下重装依赖：")
+    print(f"      {sys.executable} -m pip install -r requirements.txt --upgrade")
+    sys.exit(1)
 
 
 def parse_arguments():
@@ -73,35 +88,98 @@ def open_browser(url: str, delay: int = 2):
     webbrowser.open(url)
 
 
-def check_port_available(host: str, port: int, force_kill: bool = False) -> bool:
-    """检查端口是否可用，如被占用可选择强制杀掉"""
+PORT_FALLBACK_TRIES = 20
+
+
+def check_port_available(host: str, port: int) -> bool:
+    """端口当前能否绑定。"""
     import socket
-    import subprocess
-    
+
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.bind((host, port))
-        sock.close()
         return True
     except OSError:
-        if force_kill:
-            try:
-                result = subprocess.run(
-                    f'netstat -ano | findstr :{port}',
-                    shell=True, capture_output=True, text=True
-                )
-                for line in result.stdout.strip().split('\n'):
-                    if 'LISTENING' in line:
-                        parts = line.split()
-                        if len(parts) >= 5:
-                            pid = parts[-1]
-                            print(f"🔪 正在终止占用端口 {port} 的进程 (PID: {pid})...")
-                            subprocess.run(f'taskkill /F /PID {pid}', shell=True)
-                            time.sleep(1)
-                            return check_port_available(host, port, force_kill=False)
-            except Exception as e:
-                print(f"⚠️  终止进程失败: {e}")
         return False
+    finally:
+        sock.close()
+
+
+def port_holders(port: int) -> list:
+    """返回监听该端口的 PID 列表；查不到就返回空表。"""
+    import subprocess
+
+    if sys.platform == "win32":
+        # 原来这里走 `netstat -ano | findstr`，findstr 是 Windows 专有命令，
+        # 在 macOS / Linux 上必然失败。改成不依赖 shell 的形式并按平台分流。
+        command = ["netstat", "-ano"]
+    else:
+        command = ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"]
+
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return []
+
+    if sys.platform != "win32":
+        return [pid for pid in result.stdout.split() if pid.isdigit()]
+
+    # netstat -ano 的列：Proto / 本地地址 / 远端地址 / 状态 / PID
+    pids = []
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 5 or parts[3] != "LISTENING":
+            continue
+        if not parts[1].endswith(f":{port}"):
+            continue
+        if parts[4].isdigit() and parts[4] not in pids:
+            pids.append(parts[4])
+    return pids
+
+
+def kill_port_holders(port: int) -> bool:
+    """终止占用端口的进程；仅 Windows 沿用旧的自动清理行为。"""
+    import subprocess
+
+    pids = port_holders(port)
+    if not pids:
+        return False
+
+    for pid in pids:
+        print(f"🔪 正在终止占用端口 {port} 的进程 (PID: {pid})...")
+        try:
+            subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True, timeout=10)
+        except (OSError, subprocess.SubprocessError) as error:
+            print(f"⚠️  终止进程失败: {error}")
+            return False
+    time.sleep(1)
+    return True
+
+
+def resolve_port(host: str, port: int) -> int:
+    """选出一个能用的端口。
+
+    端口被占用时旧代码只会尝试 Windows 的 taskkill，失败就 ``sys.exit(1)``；
+    在 macOS / Linux 上这条路必然走不通，表现就是程序一启动就退出。
+    现在改为：Windows 保持自动清理，其余平台顺延到下一个空闲端口。
+    """
+    if check_port_available(host, port):
+        return port
+
+    if sys.platform == "win32" and kill_port_holders(port) and check_port_available(host, port):
+        return port
+
+    holders = port_holders(port)
+    detail = f"（占用进程 PID: {', '.join(holders)}）" if holders else ""
+    print(f"⚠️  端口 {port} 已被占用{detail}")
+
+    for candidate in range(port + 1, port + 1 + PORT_FALLBACK_TRIES):
+        if check_port_available(host, candidate):
+            print(f"➡️  已自动改用空闲端口 {candidate}（可用 --port 指定其他端口）")
+            return candidate
+
+    print(f"❌ {port}-{port + PORT_FALLBACK_TRIES} 全部被占用，请用 --port 指定一个空闲端口")
+    sys.exit(1)
 
 
 def main():
@@ -120,9 +198,10 @@ def main():
         sys.exit(1)
     
     host = args.host
-    port = args.port
+    # 端口可能因占用而顺延，必须先定下来再打印地址，否则提示的 URL 是错的。
+    port = resolve_port(host, args.port)
     url = f"http://{host}:{port}"
-    
+
     print(f"\n📋 配置信息:")
     print(f"   后端地址: {url}")
     print(f"   API文档:  {url}/docs")
@@ -135,12 +214,7 @@ def main():
     if not (static_dir / "index.html").exists():
         print(f"⚠️  前端产物未找到（{static_dir}），页面将不可用；请先在 web/ 执行 npm run build")
     print()
-    
-    # 检查端口是否被占用，如被占用则自动杀掉进程
-    if not check_port_available(host, port, force_kill=True):
-        print(f"⚠️  无法启动服务器，端口 {port} 被占用且无法终止")
-        sys.exit(1)
-    
+
     if not args.no_browser:
         browser_thread = threading.Thread(
             target=open_browser,

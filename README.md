@@ -8,9 +8,9 @@
 
 | 依赖 | 版本 |
 |------|------|
-| Python | 3.11+ |
+| Python | 3.11 - 3.13 |
 | Node.js | 18+ |
-| 操作系统 | Windows（推荐 PowerShell） |
+| 操作系统 | Windows / macOS / Linux |
 
 ---
 
@@ -18,11 +18,25 @@
 
 **第一步：Python 依赖**
 
+Windows（PowerShell）：
+
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
+
+macOS / Linux：
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+> 用 `python3 -V` 确认版本在 3.11 - 3.13 之间。macOS 自带的 `/usr/bin/python3`
+> 通常是 3.9，用它建的虚拟环境启动时会报
+> `Unable to evaluate type annotation 'UploadFile | None'`。
 
 **第二步：前端依赖**
 
@@ -44,11 +58,14 @@ cd ..
 
 ## 启动
 
-```powershell
+```bash
 python app_web.py
 ```
 
 着陆页：`http://127.0.0.1:8000`
+
+> 8000 端口被别的程序占用时会自动顺延到 8001、8002……以启动日志里打印的
+> 地址为准，也可以用 `--port` 指定。
 
 课程工作台：`http://127.0.0.1:8000/courses`
 

@@ -15,7 +15,10 @@ PUMC_venv/
 htmlcov/
 
 # ── 构建产物 ──────────────────────────────────────────────────────────────────
-dist/
+# 只忽略仓库根目录的 PyInstaller 产物。写成 `dist/` 会匹配任意层级的 dist 目录，
+# 把下面明确要求提交的 web/dist/ 一起吃掉（`git check-ignore -v web/dist/index.html`
+# 会指到这一行），结果就是新克隆的仓库没有前端产物，启动后只有 API、页面打不开。
+/dist/
 build/
 installer_output/
 *.exe

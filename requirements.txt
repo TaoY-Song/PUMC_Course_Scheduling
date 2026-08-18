@@ -1,13 +1,16 @@
 # PUMC排课系统依赖包
 
-# GUI界面框架（Qt 桌面版）
-PyQt5==5.15.10
-PyQt5-Qt5==5.15.2
-PyQt5-sip==12.13.0
-
 # 核心数据处理
-pandas==2.0.3
-openpyxl==3.1.2
+# pandas 必须 >= 2.2.2：
+#   * 2.0.3 的 C 扩展是按 numpy 1.x 的 ABI 编译的，而它只声明 numpy>=1.23.2
+#     （无上界），新装环境会拉到 numpy 2.x，import pandas 直接抛
+#     "ValueError: numpy.dtype size changed"，程序启动即退出。
+#   * 2.0.3 也没有 CPython 3.12/3.13 的 wheel，新版 Python 上会退化成源码
+#     编译并失败。
+# numpy 下界随之抬到 1.26（第一个支持 3.12 的版本），上界挡住未来的大版本 ABI 变更。
+pandas>=2.2.2
+numpy>=1.26.0,<3
+openpyxl>=3.1.2
 xlrd>=2.0.1
 
 # Web 后端
@@ -32,6 +35,12 @@ pytest-cov==4.1.0
 #   ortools                 —— CP-SAT 代码路径不可达且未完成，已删除；
 #                              当前排课用的是纯 Python 回溯算法，无需此依赖。
 #                              （另：它在 Windows 上与 pandas 存在 DLL 加载冲突）
-# numpy / protobuf / websockets / typing-extensions / python-dateutil / pytz / six
+# protobuf / websockets / typing-extensions / python-dateutil / pytz / six
 # 由 pandas / uvicorn / pydantic 作为传递依赖自行管理，不再在此固定版本，
 # 避免与上游要求冲突。
+#   注意：numpy 是例外，见上方说明——它与 pandas 之间是二进制 ABI 耦合，
+#   放任传递依赖解析会装出跑不起来的组合。
+#
+# PyQt5 / PyQt5-Qt5 / PyQt5-sip —— v3.0 已删除 Qt 桌面版，全仓库零引用。
+#   继续保留不仅是死依赖，PyQt5-Qt5==5.15.2 还没有 macOS arm64 wheel，
+#   Apple Silicon 上 `pip install -r requirements.txt` 会直接失败。
